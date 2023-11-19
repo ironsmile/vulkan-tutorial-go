@@ -1,0 +1,4 @@
+github.com/go-gl/glfw/v3.3/glfw v0.0.0-20231102141658-eca20e8abded h1:W0pE6Cn9okp21yrBqVzPDf2NLK6J+i/f6XlqxQJ9iOw=
+github.com/go-gl/glfw/v3.3/glfw v0.0.0-20231102141658-eca20e8abded/go.mod h1:tQ2UAYgL5IevRw8kRxooKSPJfGvJ9fJQFa0TUsXzTg8=
+github.com/vulkan-go/vulkan v0.0.0-20221209234627-c0a353ae26c8 h1:qPHDyQTLtn40kezY6y4UL7bH7Z0Im9wSu1tQtM2wbUU=
+github.com/vulkan-go/vulkan v0.0.0-20221209234627-c0a353ae26c8/go.mod h1:Y5Ti1uUBdKDsb0W8aPtIo9krs+29Y7p6Bc9yyy4AM6g=

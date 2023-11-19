@@ -29,6 +29,11 @@ var args struct {
 	debug bool
 }
 
+const (
+	title             = "Vulkan Tutorial: Hello Triangle"
+	maxFramesInFlight = 2
+)
+
 func main() {
 	flag.Parse()
 
@@ -93,12 +98,14 @@ type HelloTriangleApp struct {
 
 	graphicsPipline vk.Pipeline
 
-	commandPool   vk.CommandPool
-	commandBuffer vk.CommandBuffer
+	commandPool    vk.CommandPool
+	commandBuffers []vk.CommandBuffer
 
-	imageAvailabmeSem vk.Semaphore
-	renderFinishedSem vk.Semaphore
-	inFlightFence     vk.Fence
+	imageAvailabmeSems []vk.Semaphore
+	renderFinishedSems []vk.Semaphore
+	inFlightFences     []vk.Fence
+
+	curentFrame uint32
 }
 
 // Run runs the vulkan program.
@@ -205,9 +212,11 @@ func (h *HelloTriangleApp) initVulkan() error {
 }
 
 func (h *HelloTriangleApp) cleanVulkan() {
-	vk.DestroySemaphore(h.device, h.imageAvailabmeSem, nil)
-	vk.DestroySemaphore(h.device, h.renderFinishedSem, nil)
-	vk.DestroyFence(h.device, h.inFlightFence, nil)
+	for i := 0; i < maxFramesInFlight; i++ {
+		vk.DestroySemaphore(h.device, h.imageAvailabmeSems[i], nil)
+		vk.DestroySemaphore(h.device, h.renderFinishedSems[i], nil)
+		vk.DestroyFence(h.device, h.inFlightFences[i], nil)
+	}
 
 	vk.DestroyCommandPool(h.device, h.commandPool, nil)
 
@@ -741,15 +750,15 @@ func (h *HelloTriangleApp) createCommandBuffer() error {
 		SType:              vk.StructureTypeCommandBufferAllocateInfo,
 		CommandPool:        h.commandPool,
 		Level:              vk.CommandBufferLevelPrimary,
-		CommandBufferCount: 1,
+		CommandBufferCount: 2,
 	}
 
-	commandBuffers := make([]vk.CommandBuffer, 1)
+	commandBuffers := make([]vk.CommandBuffer, 2)
 	res := vk.AllocateCommandBuffers(h.device, &allocInfo, commandBuffers)
 	if err := vk.Error(res); err != nil {
 		return fmt.Errorf("failed to allocate command buffer: %w", err)
 	}
-	h.commandBuffer = commandBuffers[0]
+	h.commandBuffers = commandBuffers
 
 	return nil
 }
@@ -763,7 +772,7 @@ func (h *HelloTriangleApp) recordCommandBuffer(
 		Flags: 0,
 	}
 
-	res := vk.BeginCommandBuffer(h.commandBuffer, &beginInfo)
+	res := vk.BeginCommandBuffer(commandBuffer, &beginInfo)
 	if err := vk.Error(res); err != nil {
 		return fmt.Errorf("cannot add begin command to the buffer: %w", err)
 	}
@@ -822,29 +831,31 @@ func (h *HelloTriangleApp) createSyncObjects() error {
 		Flags: vk.FenceCreateFlags(vk.FenceCreateSignaledBit),
 	}
 
-	var imageAvailabmeSem vk.Semaphore
-	if err := vk.Error(
-		vk.CreateSemaphore(h.device, &semaphoreInfo, nil, &imageAvailabmeSem),
-	); err != nil {
-		return fmt.Errorf("failed to create imageAvailabmeSem: %w", err)
-	}
-	h.imageAvailabmeSem = imageAvailabmeSem
+	for i := 0; i < maxFramesInFlight; i++ {
+		var imageAvailabmeSem vk.Semaphore
+		if err := vk.Error(
+			vk.CreateSemaphore(h.device, &semaphoreInfo, nil, &imageAvailabmeSem),
+		); err != nil {
+			return fmt.Errorf("failed to create imageAvailabmeSem: %w", err)
+		}
+		h.imageAvailabmeSems = append(h.imageAvailabmeSems, imageAvailabmeSem)
 
-	var renderFinishedSem vk.Semaphore
-	if err := vk.Error(
-		vk.CreateSemaphore(h.device, &semaphoreInfo, nil, &renderFinishedSem),
-	); err != nil {
-		return fmt.Errorf("failed to create renderFinishedSem: %w", err)
-	}
-	h.renderFinishedSem = renderFinishedSem
+		var renderFinishedSem vk.Semaphore
+		if err := vk.Error(
+			vk.CreateSemaphore(h.device, &semaphoreInfo, nil, &renderFinishedSem),
+		); err != nil {
+			return fmt.Errorf("failed to create renderFinishedSem: %w", err)
+		}
+		h.renderFinishedSems = append(h.renderFinishedSems, renderFinishedSem)
 
-	var fence vk.Fence
-	if err := vk.Error(
-		vk.CreateFence(h.device, &fenceInfo, nil, &fence),
-	); err != nil {
-		return fmt.Errorf("failed to create inFlightFence: %w", err)
+		var fence vk.Fence
+		if err := vk.Error(
+			vk.CreateFence(h.device, &fenceInfo, nil, &fence),
+		); err != nil {
+			return fmt.Errorf("failed to create inFlightFence: %w", err)
+		}
+		h.inFlightFences = append(h.inFlightFences, fence)
 	}
-	h.inFlightFence = fence
 
 	return nil
 }
@@ -1176,37 +1187,40 @@ func (h *HelloTriangleApp) mainLoop() error {
 }
 
 func (h *HelloTriangleApp) drawFrame() error {
-	vk.WaitForFences(h.device, 1, []vk.Fence{h.inFlightFence}, vk.True, math.MaxUint64)
-	vk.ResetFences(h.device, 1, []vk.Fence{h.inFlightFence})
+	fences := []vk.Fence{h.inFlightFences[h.curentFrame]}
+	vk.WaitForFences(h.device, 1, fences, vk.True, math.MaxUint64)
+	vk.ResetFences(h.device, 1, fences)
 
 	var imageIndex uint32
 	vk.AcquireNextImage(
 		h.device,
 		h.swapChain,
 		math.MaxUint64,
-		h.imageAvailabmeSem,
+		h.imageAvailabmeSems[h.curentFrame],
 		vk.Fence(vk.NullHandle),
 		&imageIndex,
 	)
 
-	vk.ResetCommandBuffer(h.commandBuffer, 0)
-	if err := h.recordCommandBuffer(h.commandBuffer, imageIndex); err != nil {
+	commandBuffer := h.commandBuffers[h.curentFrame]
+
+	vk.ResetCommandBuffer(commandBuffer, 0)
+	if err := h.recordCommandBuffer(commandBuffer, imageIndex); err != nil {
 		return fmt.Errorf("recording command buffer: %w", err)
 	}
 
 	signalSemaphores := []vk.Semaphore{
-		h.renderFinishedSem,
+		h.renderFinishedSems[h.curentFrame],
 	}
 
 	submitInfo := vk.SubmitInfo{
 		SType:              vk.StructureTypeSubmitInfo,
 		WaitSemaphoreCount: 1,
-		PWaitSemaphores:    []vk.Semaphore{h.imageAvailabmeSem},
+		PWaitSemaphores:    []vk.Semaphore{h.imageAvailabmeSems[h.curentFrame]},
 		PWaitDstStageMask: []vk.PipelineStageFlags{
 			vk.PipelineStageFlags(vk.PipelineStageColorAttachmentOutputBit),
 		},
 		CommandBufferCount:   1,
-		PCommandBuffers:      []vk.CommandBuffer{h.commandBuffer},
+		PCommandBuffers:      []vk.CommandBuffer{commandBuffer},
 		PSignalSemaphores:    signalSemaphores,
 		SignalSemaphoreCount: uint32(len(signalSemaphores)),
 	}
@@ -1215,7 +1229,7 @@ func (h *HelloTriangleApp) drawFrame() error {
 		h.graphicsQueue,
 		1,
 		[]vk.SubmitInfo{submitInfo},
-		h.inFlightFence,
+		h.inFlightFences[h.curentFrame],
 	)
 	if err := vk.Error(res); err != nil {
 		return fmt.Errorf("queue submit error: %w", err)
@@ -1235,6 +1249,8 @@ func (h *HelloTriangleApp) drawFrame() error {
 	}
 
 	vk.QueuePresent(h.presentQueue, &presentInfo)
+
+	h.curentFrame = (h.curentFrame + 1) % maxFramesInFlight
 	return nil
 }
 
@@ -1271,5 +1287,3 @@ type sliceHeader struct {
 	Len  int
 	Cap  int
 }
-
-const title = "Vulkan Tutorial: Hello Triangle"

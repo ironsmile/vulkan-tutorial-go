@@ -33,8 +33,8 @@ func main() {
 	flag.Parse()
 
 	app := &HelloTriangleApp{
-		width:                  1920,
-		height:                 1080,
+		width:                  1024,
+		height:                 768,
 		enableValidationLayers: args.debug,
 		validationLayers: []string{
 			"VK_LAYER_KHRONOS_validation\x00",
@@ -993,11 +993,13 @@ func (h *HelloTriangleApp) getDeviceScore(device vk.PhysicalDevice) uint32 {
 		deviceScore = 0
 	}
 
-	log.Printf(
-		"Available device: %s (score: %d)",
-		vk.ToString(properties.DeviceName[:]),
-		deviceScore,
-	)
+	if args.debug {
+		log.Printf(
+			"Available device: %s (score: %d)",
+			vk.ToString(properties.DeviceName[:]),
+			deviceScore,
+		)
+	}
 
 	return deviceScore
 }

@@ -105,6 +105,8 @@ type HelloTriangleApp struct {
 	renderFinishedSems []vk.Semaphore
 	inFlightFences     []vk.Fence
 
+	frameBufferResized bool
+
 	curentFrame uint32
 }
 
@@ -118,7 +120,7 @@ func (h *HelloTriangleApp) Run() error {
 	if err := h.initVulkan(); err != nil {
 		return fmt.Errorf("initVulkan: %w", err)
 	}
-	defer h.cleanVulkan()
+	defer h.cleanupVulkan()
 
 	if err := h.mainLoop(); err != nil {
 		return fmt.Errorf("mainLoop: %w", err)
@@ -137,15 +139,25 @@ func (h *HelloTriangleApp) initWindow() error {
 	}
 
 	glfw.WindowHint(glfw.ClientAPI, glfw.NoAPI)
-	glfw.WindowHint(glfw.Resizable, glfw.False)
+	// glfw.WindowHint(glfw.Resizable, glfw.False)
 
 	window, err := glfw.CreateWindow(h.width, h.height, title, nil, nil)
 	if err != nil {
 		return fmt.Errorf("creating window: %w", err)
 	}
 
+	window.SetFramebufferSizeCallback(h.frameBufferResizeCallback)
+
 	h.window = window
 	return nil
+}
+
+func (h *HelloTriangleApp) frameBufferResizeCallback(
+	w *glfw.Window,
+	width int,
+	height int,
+) {
+	h.frameBufferResized = true
 }
 
 func (h *HelloTriangleApp) cleanWindow() {
@@ -211,7 +223,7 @@ func (h *HelloTriangleApp) initVulkan() error {
 	return nil
 }
 
-func (h *HelloTriangleApp) cleanVulkan() {
+func (h *HelloTriangleApp) cleanupVulkan() {
 	for i := 0; i < maxFramesInFlight; i++ {
 		vk.DestroySemaphore(h.device, h.imageAvailabmeSems[i], nil)
 		vk.DestroySemaphore(h.device, h.renderFinishedSems[i], nil)
@@ -223,11 +235,23 @@ func (h *HelloTriangleApp) cleanVulkan() {
 	vk.DestroyPipeline(h.device, h.graphicsPipline, nil)
 	vk.DestroyPipelineLayout(h.device, h.pipelineLayout, nil)
 
+	h.cleanupSwapChain()
+
+	vk.DestroyRenderPass(h.device, h.renderPass, nil)
+
+	if h.device != vk.Device(vk.NullHandle) {
+		vk.DestroyDevice(h.device, nil)
+	}
+	if h.surface != vk.NullSurface {
+		vk.DestroySurface(h.instance, h.surface, nil)
+	}
+	vk.DestroyInstance(h.instance, nil)
+}
+
+func (h *HelloTriangleApp) cleanupSwapChain() {
 	for _, frameBuffer := range h.swapChainFramebuffers {
 		vk.DestroyFramebuffer(h.device, frameBuffer, nil)
 	}
-
-	vk.DestroyRenderPass(h.device, h.renderPass, nil)
 
 	for _, imageView := range h.swapChainImageViews {
 		vk.DestroyImageView(h.device, imageView, nil)
@@ -238,14 +262,6 @@ func (h *HelloTriangleApp) cleanVulkan() {
 	}
 	h.swapChainImages = nil
 	h.swapChainImageViews = nil
-
-	if h.device != vk.Device(vk.NullHandle) {
-		vk.DestroyDevice(h.device, nil)
-	}
-	if h.surface != vk.NullSurface {
-		vk.DestroySurface(h.instance, h.surface, nil)
-	}
-	vk.DestroyInstance(h.instance, nil)
 }
 
 func (h *HelloTriangleApp) createSurface() error {
@@ -415,6 +431,33 @@ func (h *HelloTriangleApp) createSwapChain() error {
 
 	h.swapChainImageFormat = surfaceFormat.Format
 	h.swapChainExtend = extend
+
+	return nil
+}
+
+func (h *HelloTriangleApp) recreateSwapChain() error {
+	for true {
+		width, height := h.window.GetFramebufferSize()
+		if width != 0 || height != 0 {
+			break
+		}
+
+		glfw.WaitEvents()
+	}
+
+	vk.DeviceWaitIdle(h.device)
+
+	h.cleanupSwapChain()
+
+	if err := h.createSwapChain(); err != nil {
+		return fmt.Errorf("createSwapChain: %w", err)
+	}
+	if err := h.createImageViews(); err != nil {
+		return fmt.Errorf("createImageViews: %w", err)
+	}
+	if err := h.createFramebuffers(); err != nil {
+		return fmt.Errorf("createFramebuffers: %w", err)
+	}
 
 	return nil
 }
@@ -1189,10 +1232,9 @@ func (h *HelloTriangleApp) mainLoop() error {
 func (h *HelloTriangleApp) drawFrame() error {
 	fences := []vk.Fence{h.inFlightFences[h.curentFrame]}
 	vk.WaitForFences(h.device, 1, fences, vk.True, math.MaxUint64)
-	vk.ResetFences(h.device, 1, fences)
 
 	var imageIndex uint32
-	vk.AcquireNextImage(
+	res := vk.AcquireNextImage(
 		h.device,
 		h.swapChain,
 		math.MaxUint64,
@@ -1200,6 +1242,15 @@ func (h *HelloTriangleApp) drawFrame() error {
 		vk.Fence(vk.NullHandle),
 		&imageIndex,
 	)
+	if res == vk.ErrorOutOfDate {
+		h.recreateSwapChain()
+		return nil
+	} else if res != vk.Success && res != vk.Suboptimal {
+		return fmt.Errorf("failed to acquire swap chain image: %w", vk.Error(res))
+	}
+
+	// Only reset the fence if we are submitting work.
+	vk.ResetFences(h.device, 1, fences)
 
 	commandBuffer := h.commandBuffers[h.curentFrame]
 
@@ -1225,7 +1276,7 @@ func (h *HelloTriangleApp) drawFrame() error {
 		SignalSemaphoreCount: uint32(len(signalSemaphores)),
 	}
 
-	res := vk.QueueSubmit(
+	res = vk.QueueSubmit(
 		h.graphicsQueue,
 		1,
 		[]vk.SubmitInfo{submitInfo},
@@ -1248,7 +1299,13 @@ func (h *HelloTriangleApp) drawFrame() error {
 		PImageIndices:      []uint32{imageIndex},
 	}
 
-	vk.QueuePresent(h.presentQueue, &presentInfo)
+	res = vk.QueuePresent(h.presentQueue, &presentInfo)
+	if res == vk.ErrorOutOfDate || res == vk.Suboptimal || h.frameBufferResized {
+		h.frameBufferResized = false
+		h.recreateSwapChain()
+	} else if res != vk.Success {
+		return fmt.Errorf("failed to present swap chain image: %w", vk.Error(res))
+	}
 
 	h.curentFrame = (h.curentFrame + 1) % maxFramesInFlight
 	return nil

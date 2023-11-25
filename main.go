@@ -829,29 +829,157 @@ func (h *HelloTriangleApp) createCommandPool() error {
 }
 
 func (h *HelloTriangleApp) createVertexBuffer() error {
+	bufferSize := vk.DeviceSize(uint32(len(h.vertices)) * GetVertexSize())
+
+	// Create the staging buffer
+	var (
+		stagingBuffer       vk.Buffer
+		stagingBufferMemory vk.DeviceMemory
+	)
+	err := h.createBuffer(
+		bufferSize,
+		vk.BufferUsageFlags(vk.BufferUsageTransferSrcBit),
+		vk.MemoryPropertyFlags(vk.MemoryPropertyHostVisibleBit)|
+			vk.MemoryPropertyFlags(vk.MemoryPropertyHostCoherentBit),
+		&stagingBuffer,
+		&stagingBufferMemory,
+	)
+	if err != nil {
+		return fmt.Errorf("creating the staging buffer: %w", err)
+	}
+
+	defer func() {
+		vk.DestroyBuffer(h.device, stagingBuffer, nil)
+		vk.FreeMemory(h.device, stagingBufferMemory, nil)
+	}()
+
+	// Copy the data from host to staging buffer
+	var pData unsafe.Pointer
+	vk.MapMemory(h.device, stagingBufferMemory, 0, bufferSize, 0, &pData)
+
+	bytesSlice := unsafer.ToBytes(h.vertices)
+
+	vk.Memcopy(pData, bytesSlice)
+	vk.UnmapMemory(h.device, stagingBufferMemory)
+
+	// Create the device local buffer
+	var (
+		vertexBuffer       vk.Buffer
+		vertexBufferMemory vk.DeviceMemory
+	)
+
+	err = h.createBuffer(
+		bufferSize,
+		vk.BufferUsageFlags(vk.BufferUsageTransferDstBit)|
+			vk.BufferUsageFlags(vk.BufferUsageVertexBufferBit),
+		vk.MemoryPropertyFlags(vk.MemoryPropertyDeviceLocalBit),
+		&vertexBuffer,
+		&vertexBufferMemory,
+	)
+	if err != nil {
+		return fmt.Errorf("creating the vertex buffer: %w", err)
+	}
+	h.vertexBuffer = vertexBuffer
+	h.vertexBufferMemory = vertexBufferMemory
+
+	if err := h.copyBuffer(stagingBuffer, h.vertexBuffer, bufferSize); err != nil {
+		return fmt.Errorf("failed to copy staging buffer into vertex: %w", err)
+	}
+
+	return nil
+}
+
+func (h *HelloTriangleApp) copyBuffer(
+	srcBuffer vk.Buffer,
+	dstBuffer vk.Buffer,
+	size vk.DeviceSize,
+) error {
+
+	allocInfo := vk.CommandBufferAllocateInfo{
+		SType:              vk.StructureTypeCommandBufferAllocateInfo,
+		Level:              vk.CommandBufferLevelPrimary,
+		CommandPool:        h.commandPool,
+		CommandBufferCount: 1,
+	}
+
+	commandBuffers := make([]vk.CommandBuffer, 1)
+	res := vk.AllocateCommandBuffers(
+		h.device,
+		&allocInfo,
+		commandBuffers,
+	)
+	if res != vk.Success {
+		return fmt.Errorf("failed to allocate command buffer: %w", vk.Error(res))
+	}
+	commandBuffer := commandBuffers[0]
+
+	defer func() {
+		vk.FreeCommandBuffers(h.device, h.commandPool, 1, commandBuffers)
+	}()
+
+	beginInfo := vk.CommandBufferBeginInfo{
+		SType: vk.StructureTypeCommandBufferBeginInfo,
+		Flags: vk.CommandBufferUsageFlags(vk.CommandBufferUsageOneTimeSubmitBit),
+	}
+
+	vk.BeginCommandBuffer(commandBuffer, &beginInfo)
+
+	copyRegion := vk.BufferCopy{
+		SrcOffset: 0,
+		DstOffset: 0,
+		Size:      size,
+	}
+
+	vk.CmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, []vk.BufferCopy{copyRegion})
+
+	res = vk.EndCommandBuffer(commandBuffer)
+	if res != vk.Success {
+		return fmt.Errorf("failed end command buffer: %w", vk.Error(res))
+	}
+
+	submitInfo := vk.SubmitInfo{
+		SType:              vk.StructureTypeSubmitInfo,
+		CommandBufferCount: 1,
+		PCommandBuffers:    commandBuffers,
+	}
+
+	res = vk.QueueSubmit(h.graphicsQueue, 1, []vk.SubmitInfo{submitInfo}, vk.NullFence)
+	if res != vk.Success {
+		return fmt.Errorf("failed to submit to graphics queue: %w", vk.Error(res))
+	}
+
+	res = vk.QueueWaitIdle(h.graphicsQueue)
+	if res != vk.Success {
+		return fmt.Errorf("failed to wait on graphics queue idle: %w", vk.Error(res))
+	}
+
+	return nil
+}
+
+func (h *HelloTriangleApp) createBuffer(
+	size vk.DeviceSize,
+	usage vk.BufferUsageFlags,
+	properties vk.MemoryPropertyFlags,
+	buffer *vk.Buffer,
+	bufferMemory *vk.DeviceMemory,
+) error {
 	bufferInfo := vk.BufferCreateInfo{
 		SType:       vk.StructureTypeBufferCreateInfo,
-		Size:        vk.DeviceSize(uint32(len(h.vertices)) * GetVertexSize()),
-		Usage:       vk.BufferUsageFlags(vk.BufferUsageVertexBufferBit),
+		Size:        size,
+		Usage:       usage,
 		SharingMode: vk.SharingModeExclusive,
 	}
 
-	var vertexBuffer vk.Buffer
-	res := vk.CreateBuffer(h.device, &bufferInfo, nil, &vertexBuffer)
+	res := vk.CreateBuffer(h.device, &bufferInfo, nil, buffer)
 	if res != vk.Success {
 		return fmt.Errorf("failed to create vertex buffer: %w", vk.Error(res))
 	}
-	h.vertexBuffer = vertexBuffer
 
 	var memRequirements vk.MemoryRequirements
-	vk.GetBufferMemoryRequirements(h.device, h.vertexBuffer, &memRequirements)
+	vk.GetBufferMemoryRequirements(h.device, *buffer, &memRequirements)
 	memRequirements.Deref()
 
-	memTypeIndex, err := h.findMemoryType(
-		memRequirements.MemoryTypeBits,
-		vk.MemoryPropertyFlags(vk.MemoryPropertyHostVisibleBit)|
-			vk.MemoryPropertyFlags(vk.MemoryPropertyHostCoherentBit),
-	)
+	memTypeIndex, err := h.findMemoryType(memRequirements.MemoryTypeBits, properties)
 	if err != nil {
 		return err
 	}
@@ -862,25 +990,15 @@ func (h *HelloTriangleApp) createVertexBuffer() error {
 		MemoryTypeIndex: memTypeIndex,
 	}
 
-	var vertexBufferMemory vk.DeviceMemory
-	res = vk.AllocateMemory(h.device, &allocInfo, nil, &vertexBufferMemory)
+	res = vk.AllocateMemory(h.device, &allocInfo, nil, bufferMemory)
 	if res != vk.Success {
 		return fmt.Errorf("failed to allocate vertex buffer memory: %s", vk.Error(res))
 	}
-	h.vertexBufferMemory = vertexBufferMemory
 
-	res = vk.BindBufferMemory(h.device, h.vertexBuffer, h.vertexBufferMemory, 0)
+	res = vk.BindBufferMemory(h.device, *buffer, *bufferMemory, 0)
 	if res != vk.Success {
 		return fmt.Errorf("failed to bind buffer memory: %w", vk.Error(res))
 	}
-
-	var pData unsafe.Pointer
-	vk.MapMemory(h.device, h.vertexBufferMemory, 0, bufferInfo.Size, 0, &pData)
-
-	bytesSlice := unsafer.ToBytes(h.vertices)
-
-	vk.Memcopy(pData, bytesSlice)
-	vk.UnmapMemory(h.device, h.vertexBufferMemory)
 
 	return nil
 }

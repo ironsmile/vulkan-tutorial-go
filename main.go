@@ -56,20 +56,27 @@ func main() {
 		swapChain:      vk.NullSwapchain,
 		vertices: []Vertex{
 			{
-				pos:   linmath.Vec2{0, -0.5},
-				color: linmath.Vec3{1, 1, 1},
+				pos:   linmath.Vec2{-0.5, -0.5},
+				color: linmath.Vec3{1, 0, 0},
 			},
 			{
-				pos:   linmath.Vec2{0.5, 0.5},
+				pos:   linmath.Vec2{0.5, -0.5},
 				color: linmath.Vec3{0, 1, 0},
 			},
 			{
-				pos:   linmath.Vec2{-0.5, 0.5},
+				pos:   linmath.Vec2{0.5, 0.5},
 				color: linmath.Vec3{0, 0, 1},
 			},
+			{
+				pos:   linmath.Vec2{-0.5, 0.5},
+				color: linmath.Vec3{1, 1, 1},
+			},
 		},
+		indices:            []uint16{0, 1, 2, 2, 3, 0},
 		vertexBuffer:       vk.NullBuffer,
 		vertexBufferMemory: vk.NullDeviceMemory,
+		indexBuffer:        vk.NullBuffer,
+		indexBufferMemory:  vk.NullDeviceMemory,
 	}
 	if err := app.Run(); err != nil {
 		log.Fatalf("ERROR: %s", err)
@@ -131,6 +138,10 @@ type HelloTriangleApp struct {
 	vertices           []Vertex
 	vertexBuffer       vk.Buffer
 	vertexBufferMemory vk.DeviceMemory
+
+	indices           []uint16
+	indexBuffer       vk.Buffer
+	indexBufferMemory vk.DeviceMemory
 }
 
 // Run runs the vulkan program.
@@ -239,6 +250,10 @@ func (h *HelloTriangleApp) initVulkan() error {
 		return fmt.Errorf("createVertexBuffer: %w", err)
 	}
 
+	if err := h.createIndexBuffer(); err != nil {
+		return fmt.Errorf("createIndexBuffer: %w", err)
+	}
+
 	if err := h.createCommandBuffer(); err != nil {
 		return fmt.Errorf("createCommandBuffer: %w", err)
 	}
@@ -269,6 +284,13 @@ func (h *HelloTriangleApp) cleanupVulkan() {
 	}
 	if h.vertexBufferMemory != vk.NullDeviceMemory {
 		vk.FreeMemory(h.device, h.vertexBufferMemory, nil)
+	}
+
+	if h.indexBuffer != vk.NullBuffer {
+		vk.DestroyBuffer(h.device, h.indexBuffer, nil)
+	}
+	if h.indexBufferMemory != vk.NullDeviceMemory {
+		vk.FreeMemory(h.device, h.indexBufferMemory, nil)
 	}
 
 	vk.DestroyRenderPass(h.device, h.renderPass, nil)
@@ -882,8 +904,73 @@ func (h *HelloTriangleApp) createVertexBuffer() error {
 	h.vertexBuffer = vertexBuffer
 	h.vertexBufferMemory = vertexBufferMemory
 
+	// Copy data from the staging buffer to the device local buffer which is our
+	// vertex buffer
 	if err := h.copyBuffer(stagingBuffer, h.vertexBuffer, bufferSize); err != nil {
 		return fmt.Errorf("failed to copy staging buffer into vertex: %w", err)
+	}
+
+	return nil
+}
+
+func (h *HelloTriangleApp) createIndexBuffer() error {
+	bufferSize := vk.DeviceSize(uint32(len(h.indices)) * uint32(unsafe.Sizeof(h.indices[0])))
+
+	// Create the staging buffer
+	var (
+		stagingBuffer       vk.Buffer
+		stagingBufferMemory vk.DeviceMemory
+	)
+	err := h.createBuffer(
+		bufferSize,
+		vk.BufferUsageFlags(vk.BufferUsageTransferSrcBit),
+		vk.MemoryPropertyFlags(vk.MemoryPropertyHostVisibleBit)|
+			vk.MemoryPropertyFlags(vk.MemoryPropertyHostCoherentBit),
+		&stagingBuffer,
+		&stagingBufferMemory,
+	)
+	if err != nil {
+		return fmt.Errorf("creating the staging buffer: %w", err)
+	}
+
+	defer func() {
+		vk.DestroyBuffer(h.device, stagingBuffer, nil)
+		vk.FreeMemory(h.device, stagingBufferMemory, nil)
+	}()
+
+	// Copy the data from host to staging buffer
+	var pData unsafe.Pointer
+	vk.MapMemory(h.device, stagingBufferMemory, 0, bufferSize, 0, &pData)
+
+	bytesSlice := unsafer.ToBytes(h.indices)
+
+	vk.Memcopy(pData, bytesSlice)
+	vk.UnmapMemory(h.device, stagingBufferMemory)
+
+	// Create the device local buffer
+	var (
+		indexBuffer       vk.Buffer
+		indexBufferMemory vk.DeviceMemory
+	)
+
+	err = h.createBuffer(
+		bufferSize,
+		vk.BufferUsageFlags(vk.BufferUsageTransferDstBit)|
+			vk.BufferUsageFlags(vk.BufferUsageIndexBufferBit),
+		vk.MemoryPropertyFlags(vk.MemoryPropertyDeviceLocalBit),
+		&indexBuffer,
+		&indexBufferMemory,
+	)
+	if err != nil {
+		return fmt.Errorf("creating the index buffer: %w", err)
+	}
+	h.indexBuffer = indexBuffer
+	h.indexBufferMemory = indexBufferMemory
+
+	// Copy data from the staging buffer to the device local buffer which is our
+	// index buffer
+	if err := h.copyBuffer(stagingBuffer, h.indexBuffer, bufferSize); err != nil {
+		return fmt.Errorf("failed to copy staging buffer into index: %w", err)
 	}
 
 	return nil
@@ -1085,6 +1172,8 @@ func (h *HelloTriangleApp) recordCommandBuffer(
 	offsets := []vk.DeviceSize{0}
 	vk.CmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets)
 
+	vk.CmdBindIndexBuffer(commandBuffer, h.indexBuffer, 0, vk.IndexTypeUint16)
+
 	viewport := vk.Viewport{
 		X: 0, Y: 0,
 		Width:    float32(h.swapChainExtend.Width),
@@ -1100,7 +1189,7 @@ func (h *HelloTriangleApp) recordCommandBuffer(
 	}
 	vk.CmdSetScissor(commandBuffer, 0, 1, []vk.Rect2D{scissor})
 
-	vk.CmdDraw(commandBuffer, uint32(len(h.vertices)), 1, 0, 0)
+	vk.CmdDrawIndexed(commandBuffer, uint32(len(h.indices)), 1, 0, 0, 0)
 	vk.CmdEndRenderPass(commandBuffer)
 
 	if err := vk.Error(vk.EndCommandBuffer(commandBuffer)); err != nil {

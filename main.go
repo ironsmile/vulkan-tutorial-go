@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"reflect"
 	"runtime"
 	"unsafe"
 
@@ -66,6 +67,8 @@ func main() {
 				color: linmath.Vec3{0, 0, 1},
 			},
 		},
+		vertexBuffer:       vk.NullBuffer,
+		vertexBufferMemory: vk.NullDeviceMemory,
 	}
 	if err := app.Run(); err != nil {
 		log.Fatalf("ERROR: %s", err)
@@ -124,7 +127,9 @@ type HelloTriangleApp struct {
 
 	curentFrame uint32
 
-	vertices []Vertex
+	vertices           []Vertex
+	vertexBuffer       vk.Buffer
+	vertexBufferMemory vk.DeviceMemory
 }
 
 // Run runs the vulkan program.
@@ -229,6 +234,10 @@ func (h *HelloTriangleApp) initVulkan() error {
 		return fmt.Errorf("createCommandPool: %w", err)
 	}
 
+	if err := h.createVertexBuffer(); err != nil {
+		return fmt.Errorf("createVertexBuffer: %w", err)
+	}
+
 	if err := h.createCommandBuffer(); err != nil {
 		return fmt.Errorf("createCommandBuffer: %w", err)
 	}
@@ -253,6 +262,13 @@ func (h *HelloTriangleApp) cleanupVulkan() {
 	vk.DestroyPipelineLayout(h.device, h.pipelineLayout, nil)
 
 	h.cleanupSwapChain()
+
+	if h.vertexBuffer != vk.NullBuffer {
+		vk.DestroyBuffer(h.device, h.vertexBuffer, nil)
+	}
+	if h.vertexBufferMemory != vk.NullDeviceMemory {
+		vk.FreeMemory(h.device, h.vertexBufferMemory, nil)
+	}
 
 	vk.DestroyRenderPass(h.device, h.renderPass, nil)
 
@@ -811,6 +827,84 @@ func (h *HelloTriangleApp) createCommandPool() error {
 	return nil
 }
 
+func (h *HelloTriangleApp) createVertexBuffer() error {
+	bufferInfo := vk.BufferCreateInfo{
+		SType:       vk.StructureTypeBufferCreateInfo,
+		Size:        vk.DeviceSize(uint32(len(h.vertices)) * GetVertexSize()),
+		Usage:       vk.BufferUsageFlags(vk.BufferUsageVertexBufferBit),
+		SharingMode: vk.SharingModeExclusive,
+	}
+
+	var vertexBuffer vk.Buffer
+	res := vk.CreateBuffer(h.device, &bufferInfo, nil, &vertexBuffer)
+	if res != vk.Success {
+		return fmt.Errorf("failed to create vertex buffer: %w", vk.Error(res))
+	}
+	h.vertexBuffer = vertexBuffer
+
+	var memRequirements vk.MemoryRequirements
+	vk.GetBufferMemoryRequirements(h.device, h.vertexBuffer, &memRequirements)
+
+	memTypeIndex, err := h.findMemoryType(
+		memRequirements.MemoryTypeBits,
+		vk.MemoryPropertyFlags(vk.MemoryPropertyHostVisibleBit|
+			vk.MemoryPropertyHostCoherentBit),
+	)
+	if err != nil {
+		return err
+	}
+
+	allocInfo := vk.MemoryAllocateInfo{
+		SType:           vk.StructureTypeMemoryAllocateInfo,
+		AllocationSize:  memRequirements.Size,
+		MemoryTypeIndex: memTypeIndex,
+	}
+
+	var vertexBufferMemory vk.DeviceMemory
+	res = vk.AllocateMemory(h.device, &allocInfo, nil, &vertexBufferMemory)
+	if res != vk.Success {
+		return fmt.Errorf("failed to allocate vertex buffer memory: %s", vk.Error(res))
+	}
+	h.vertexBufferMemory = vertexBufferMemory
+
+	res = vk.BindBufferMemory(h.device, h.vertexBuffer, h.vertexBufferMemory, 0)
+	if res != vk.Success {
+		return fmt.Errorf("failed to bind buffer memory: %w", vk.Error(res))
+	}
+
+	var pData unsafe.Pointer
+	vk.MapMemory(h.device, h.vertexBufferMemory, 0, bufferInfo.Size, 0, &pData)
+
+	p := unsafe.Pointer((*reflect.SliceHeader)(unsafe.Pointer(&h.vertices)).Data)
+
+	vk.Memcopy(pData, nil)
+	vk.UnmapMemory(h.device, h.vertexBufferMemory)
+
+	return nil
+}
+
+func (h *HelloTriangleApp) findMemoryType(
+	typeFilter uint32,
+	properties vk.MemoryPropertyFlags,
+) (uint32, error) {
+	var memProperties vk.PhysicalDeviceMemoryProperties
+	vk.GetPhysicalDeviceMemoryProperties(h.physicalDevice, &memProperties)
+
+	for i := uint32(0); i < memProperties.MemoryTypeCount; i++ {
+		if typeFilter&(1<<i) == 0 {
+			continue
+		}
+
+		if memProperties.MemoryTypes[i].PropertyFlags&properties != properties {
+			continue
+		}
+
+		return i, nil
+	}
+
+	return 0, fmt.Errorf("failed to find suitable memory type")
+}
+
 func (h *HelloTriangleApp) createCommandBuffer() error {
 	allocInfo := vk.CommandBufferAllocateInfo{
 		SType:              vk.StructureTypeCommandBufferAllocateInfo,
@@ -1343,10 +1437,14 @@ type Vertex struct {
 	color linmath.Vec3
 }
 
+func GetVertexSize() uint32 {
+	return uint32(linmath.SizeofVec2 + linmath.SizeofVec3)
+}
+
 func GetVertexBindingDescription() vk.VertexInputBindingDescription {
 	bindingDescription := vk.VertexInputBindingDescription{
 		Binding:   0,
-		Stride:    uint32(linmath.SizeofVec2 + linmath.SizeofVec3),
+		Stride:    GetVertexSize,
 		InputRate: vk.VertexInputRateVertex,
 	}
 
@@ -1392,12 +1490,6 @@ func clamp[T cmp.Ordered](val, min, max T) T {
 
 func repackUint32(data []byte) []uint32 {
 	buf := make([]uint32, len(data)/4)
-	vk.Memcopy(unsafe.Pointer((*sliceHeader)(unsafe.Pointer(&buf)).Data), data)
+	vk.Memcopy(unsafe.Pointer((*reflect.SliceHeader)(unsafe.Pointer(&buf)).Data), data)
 	return buf
-}
-
-type sliceHeader struct {
-	Data uintptr
-	Len  int
-	Cap  int
 }

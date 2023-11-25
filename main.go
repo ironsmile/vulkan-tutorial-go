@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-gl/glfw/v3.3/glfw"
 	vk "github.com/vulkan-go/vulkan"
+	"github.com/xlab/linmath"
 )
 
 func init() {
@@ -51,6 +52,20 @@ func main() {
 		device:         vk.Device(vk.NullHandle),
 		surface:        vk.NullSurface,
 		swapChain:      vk.NullSwapchain,
+		vertices: []Vertex{
+			{
+				pos:   linmath.Vec2{0, -0.5},
+				color: linmath.Vec3{1, 0, 0},
+			},
+			{
+				pos:   linmath.Vec2{0.5, 0.5},
+				color: linmath.Vec3{0, 1, 0},
+			},
+			{
+				pos:   linmath.Vec2{-0.5, 0.5},
+				color: linmath.Vec3{0, 0, 1},
+			},
+		},
 	}
 	if err := app.Run(); err != nil {
 		log.Fatalf("ERROR: %s", err)
@@ -108,6 +123,8 @@ type HelloTriangleApp struct {
 	frameBufferResized bool
 
 	curentFrame uint32
+
+	vertices []Vertex
 }
 
 // Run runs the vulkan program.
@@ -596,11 +613,17 @@ func (h *HelloTriangleApp) createGraphicsPipeline() error {
 		fragShaderStageInfo,
 	}
 
+	bindingDescription := GetVertexBindingDescription()
+	attributeDescriptions := GetVertexAttributeDescriptions()
+
 	vertexInputInfo := vk.PipelineVertexInputStateCreateInfo{
 		SType: vk.StructureTypePipelineVertexInputStateCreateInfo,
 
-		VertexBindingDescriptionCount:   0,
-		VertexAttributeDescriptionCount: 0,
+		VertexBindingDescriptionCount: 1,
+		PVertexBindingDescriptions:    []vk.VertexInputBindingDescription{bindingDescription},
+
+		VertexAttributeDescriptionCount: uint32(len(attributeDescriptions)),
+		PVertexAttributeDescriptions:    attributeDescriptions[:],
 	}
 
 	inputAssembly := vk.PipelineInputAssemblyStateCreateInfo{
@@ -1313,6 +1336,40 @@ func (h *HelloTriangleApp) drawFrame() error {
 
 func (h *HelloTriangleApp) cleanup() error {
 	return nil
+}
+
+type Vertex struct {
+	pos   linmath.Vec2
+	color linmath.Vec3
+}
+
+func GetVertexBindingDescription() vk.VertexInputBindingDescription {
+	bindingDescription := vk.VertexInputBindingDescription{
+		Binding:   0,
+		Stride:    uint32(linmath.SizeofVec2 + linmath.SizeofVec3),
+		InputRate: vk.VertexInputRateVertex,
+	}
+
+	return bindingDescription
+}
+
+func GetVertexAttributeDescriptions() [2]vk.VertexInputAttributeDescription {
+	attrDescr := [2]vk.VertexInputAttributeDescription{
+		{
+			Binding:  0,
+			Location: 0,
+			Format:   vk.FormatR32g32Sfloat,
+			Offset:   0,
+		},
+		{
+			Binding:  0,
+			Location: 1,
+			Format:   vk.FormatR32g32b32Sfloat,
+			Offset:   uint32(linmath.SizeofVec2),
+		},
+	}
+
+	return attrDescr
 }
 
 // swapChainSupportDetails describes a present surface. The type is suitable for

@@ -8,6 +8,7 @@ import (
 	"math"
 	"reflect"
 	"runtime"
+	"time"
 	"unsafe"
 
 	"vulkan-tutorial/queues"
@@ -44,6 +45,7 @@ func main() {
 		width:                  1024,
 		height:                 768,
 		enableValidationLayers: args.debug,
+		startTime:              time.Now(),
 		validationLayers: []string{
 			"VK_LAYER_KHRONOS_validation\x00",
 		},
@@ -77,6 +79,8 @@ func main() {
 		vertexBufferMemory: vk.NullDeviceMemory,
 		indexBuffer:        vk.NullBuffer,
 		indexBufferMemory:  vk.NullDeviceMemory,
+
+		descriptorSetLayout: vk.NullDescriptorSetLayout,
 	}
 	if err := app.Run(); err != nil {
 		log.Fatalf("ERROR: %s", err)
@@ -106,6 +110,8 @@ type HelloTriangleApp struct {
 	// device is the logical device created for interfacing with the physical device.
 	device vk.Device
 
+	startTime time.Time
+
 	graphicsQueue vk.Queue
 	presentQueue  vk.Queue
 
@@ -119,8 +125,9 @@ type HelloTriangleApp struct {
 
 	swapChainFramebuffers []vk.Framebuffer
 
-	renderPass     vk.RenderPass
-	pipelineLayout vk.PipelineLayout
+	renderPass          vk.RenderPass
+	descriptorSetLayout vk.DescriptorSetLayout
+	pipelineLayout      vk.PipelineLayout
 
 	graphicsPipline vk.Pipeline
 
@@ -142,6 +149,10 @@ type HelloTriangleApp struct {
 	indices           []uint16
 	indexBuffer       vk.Buffer
 	indexBufferMemory vk.DeviceMemory
+
+	uniformBuffers       []vk.Buffer
+	uniformBuffersMemory []vk.DeviceMemory
+	uniformBuffersMapped []unsafe.Pointer
 }
 
 // Run runs the vulkan program.
@@ -234,6 +245,10 @@ func (h *HelloTriangleApp) initVulkan() error {
 		return fmt.Errorf("createRenderPass: %w", err)
 	}
 
+	if err := h.createDescriptorSetLayout(); err != nil {
+		return fmt.Errorf("createDescriptorSetLayout: %w", err)
+	}
+
 	if err := h.createGraphicsPipeline(); err != nil {
 		return fmt.Errorf("createGraphicsPipeline: %w", err)
 	}
@@ -252,6 +267,10 @@ func (h *HelloTriangleApp) initVulkan() error {
 
 	if err := h.createIndexBuffer(); err != nil {
 		return fmt.Errorf("createIndexBuffer: %w", err)
+	}
+
+	if err := h.createUniformBuffers(); err != nil {
+		return fmt.Errorf("createUniformBuffers: %w", err)
 	}
 
 	if err := h.createCommandBuffer(); err != nil {
@@ -278,6 +297,17 @@ func (h *HelloTriangleApp) cleanupVulkan() {
 	vk.DestroyPipelineLayout(h.device, h.pipelineLayout, nil)
 
 	h.cleanupSwapChain()
+
+	for _, buffer := range h.uniformBuffers {
+		vk.DestroyBuffer(h.device, buffer, nil)
+	}
+	for _, bufferMem := range h.uniformBuffersMemory {
+		vk.FreeMemory(h.device, bufferMem, nil)
+	}
+
+	if h.descriptorSetLayout != vk.NullDescriptorSetLayout {
+		vk.DestroyDescriptorSetLayout(h.device, h.descriptorSetLayout, nil)
+	}
 
 	if h.vertexBuffer != vk.NullBuffer {
 		vk.DestroyBuffer(h.device, h.vertexBuffer, nil)
@@ -605,6 +635,31 @@ func (h *HelloTriangleApp) createRenderPass() error {
 	return nil
 }
 
+func (h *HelloTriangleApp) createDescriptorSetLayout() error {
+	uboLayoutBinding := vk.DescriptorSetLayoutBinding{
+		Binding:            0,
+		DescriptorType:     vk.DescriptorTypeUniformBuffer,
+		DescriptorCount:    1,
+		StageFlags:         vk.ShaderStageFlags(vk.ShaderStageVertexBit),
+		PImmutableSamplers: nil,
+	}
+
+	layoutInfo := vk.DescriptorSetLayoutCreateInfo{
+		SType:        vk.StructureTypeDescriptorSetLayoutCreateInfo,
+		BindingCount: 1,
+		PBindings:    []vk.DescriptorSetLayoutBinding{uboLayoutBinding},
+	}
+
+	var descriptorSetLayout vk.DescriptorSetLayout
+	res := vk.CreateDescriptorSetLayout(h.device, &layoutInfo, nil, &descriptorSetLayout)
+	if res != vk.Success {
+		return fmt.Errorf("creating descriptor set layout: %w", vk.Error(res))
+	}
+	h.descriptorSetLayout = descriptorSetLayout
+
+	return nil
+}
+
 func (h *HelloTriangleApp) createGraphicsPipeline() error {
 	vertShaderCode, err := shaders.FS.ReadFile("vert.spv")
 	if err != nil {
@@ -752,7 +807,8 @@ func (h *HelloTriangleApp) createGraphicsPipeline() error {
 
 	pipelineLayoutInfo := vk.PipelineLayoutCreateInfo{
 		SType:          vk.StructureTypePipelineLayoutCreateInfo,
-		SetLayoutCount: 0,
+		SetLayoutCount: 1,
+		PSetLayouts:    []vk.DescriptorSetLayout{h.descriptorSetLayout},
 	}
 
 	var pipelineLayout vk.PipelineLayout
@@ -879,7 +935,7 @@ func (h *HelloTriangleApp) createVertexBuffer() error {
 	var pData unsafe.Pointer
 	vk.MapMemory(h.device, stagingBufferMemory, 0, bufferSize, 0, &pData)
 
-	bytesSlice := unsafer.ToBytes(h.vertices)
+	bytesSlice := unsafer.SliceToBytes(h.vertices)
 
 	vk.Memcopy(pData, bytesSlice)
 	vk.UnmapMemory(h.device, stagingBufferMemory)
@@ -942,7 +998,7 @@ func (h *HelloTriangleApp) createIndexBuffer() error {
 	var pData unsafe.Pointer
 	vk.MapMemory(h.device, stagingBufferMemory, 0, bufferSize, 0, &pData)
 
-	bytesSlice := unsafer.ToBytes(h.indices)
+	bytesSlice := unsafer.SliceToBytes(h.indices)
 
 	vk.Memcopy(pData, bytesSlice)
 	vk.UnmapMemory(h.device, stagingBufferMemory)
@@ -1038,6 +1094,37 @@ func (h *HelloTriangleApp) copyBuffer(
 	res = vk.QueueWaitIdle(h.graphicsQueue)
 	if res != vk.Success {
 		return fmt.Errorf("failed to wait on graphics queue idle: %w", vk.Error(res))
+	}
+
+	return nil
+}
+
+func (h *HelloTriangleApp) createUniformBuffers() error {
+	bufferSize := vk.DeviceSize(unsafe.Sizeof(UniformBufferObject{}))
+
+	for i := 0; i < maxFramesInFlight; i++ {
+		var (
+			buffer       vk.Buffer
+			bufferMemory vk.DeviceMemory
+		)
+		err := h.createBuffer(
+			bufferSize,
+			vk.BufferUsageFlags(vk.BufferUsageUniformBufferBit),
+			vk.MemoryPropertyFlags(vk.MemoryPropertyHostVisibleBit)|
+				vk.MemoryPropertyFlags(vk.MemoryPropertyHostCoherentBit),
+			&buffer,
+			&bufferMemory,
+		)
+		if err != nil {
+			return fmt.Errorf("creating buffer[%d]: %w", i, err)
+		}
+
+		h.uniformBuffers = append(h.uniformBuffers, buffer)
+		h.uniformBuffersMemory = append(h.uniformBuffersMemory, bufferMemory)
+
+		var pData unsafe.Pointer
+		vk.MapMemory(h.device, h.uniformBuffersMemory[i], 0, bufferSize, 0, &pData)
+		h.uniformBuffersMapped = append(h.uniformBuffersMapped, pData)
 	}
 
 	return nil
@@ -1593,6 +1680,8 @@ func (h *HelloTriangleApp) drawFrame() error {
 		return fmt.Errorf("recording command buffer: %w", err)
 	}
 
+	h.updateUniformBuffer(h.curentFrame)
+
 	signalSemaphores := []vk.Semaphore{
 		h.renderFinishedSems[h.curentFrame],
 	}
@@ -1645,6 +1734,26 @@ func (h *HelloTriangleApp) drawFrame() error {
 	return nil
 }
 
+func (h *HelloTriangleApp) updateUniformBuffer(currentImage uint32) {
+	frameTime := time.Since(h.startTime)
+	ubo := UniformBufferObject{}
+
+	ubo.model.Identity()
+	ubo.model.RotateZ(&ubo.model, float32(frameTime.Seconds()*90))
+	ubo.view.LookAt(
+		&linmath.Vec3{2, 2, 2},
+		&linmath.Vec3{0, 0, 0},
+		&linmath.Vec3{0, 0, 1},
+	)
+
+	aspectR := float32(h.swapChainExtend.Width) / float32(h.swapChainExtend.Height)
+	ubo.proj.Perspective(45, aspectR, 0.1, 10)
+
+	ubo.proj[1][1] *= -1
+
+	vk.Memcopy(h.uniformBuffersMapped[currentImage], unsafer.StructToBytes(&ubo))
+}
+
 func (h *HelloTriangleApp) cleanup() error {
 	return nil
 }
@@ -1693,6 +1802,12 @@ type swapChainSupportDetails struct {
 	capabilities vk.SurfaceCapabilities
 	formats      []vk.SurfaceFormat
 	presentModes []vk.PresentMode
+}
+
+type UniformBufferObject struct {
+	model linmath.Mat4x4
+	view  linmath.Mat4x4
+	proj  linmath.Mat4x4
 }
 
 func clamp[T cmp.Ordered](val, min, max T) T {

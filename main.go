@@ -12,6 +12,7 @@ import (
 
 	"vulkan-tutorial/queues"
 	"vulkan-tutorial/shaders"
+	"vulkan-tutorial/unsafer"
 
 	"github.com/go-gl/glfw/v3.3/glfw"
 	vk "github.com/vulkan-go/vulkan"
@@ -56,7 +57,7 @@ func main() {
 		vertices: []Vertex{
 			{
 				pos:   linmath.Vec2{0, -0.5},
-				color: linmath.Vec3{1, 0, 0},
+				color: linmath.Vec3{1, 1, 1},
 			},
 			{
 				pos:   linmath.Vec2{0.5, 0.5},
@@ -844,11 +845,12 @@ func (h *HelloTriangleApp) createVertexBuffer() error {
 
 	var memRequirements vk.MemoryRequirements
 	vk.GetBufferMemoryRequirements(h.device, h.vertexBuffer, &memRequirements)
+	memRequirements.Deref()
 
 	memTypeIndex, err := h.findMemoryType(
 		memRequirements.MemoryTypeBits,
-		vk.MemoryPropertyFlags(vk.MemoryPropertyHostVisibleBit|
-			vk.MemoryPropertyHostCoherentBit),
+		vk.MemoryPropertyFlags(vk.MemoryPropertyHostVisibleBit)|
+			vk.MemoryPropertyFlags(vk.MemoryPropertyHostCoherentBit),
 	)
 	if err != nil {
 		return err
@@ -875,9 +877,9 @@ func (h *HelloTriangleApp) createVertexBuffer() error {
 	var pData unsafe.Pointer
 	vk.MapMemory(h.device, h.vertexBufferMemory, 0, bufferInfo.Size, 0, &pData)
 
-	p := unsafe.Pointer((*reflect.SliceHeader)(unsafe.Pointer(&h.vertices)).Data)
+	bytesSlice := unsafer.ToBytes(h.vertices)
 
-	vk.Memcopy(pData, nil)
+	vk.Memcopy(pData, bytesSlice)
 	vk.UnmapMemory(h.device, h.vertexBufferMemory)
 
 	return nil
@@ -889,13 +891,17 @@ func (h *HelloTriangleApp) findMemoryType(
 ) (uint32, error) {
 	var memProperties vk.PhysicalDeviceMemoryProperties
 	vk.GetPhysicalDeviceMemoryProperties(h.physicalDevice, &memProperties)
+	memProperties.Deref()
 
 	for i := uint32(0); i < memProperties.MemoryTypeCount; i++ {
+		memType := memProperties.MemoryTypes[i]
+		memType.Deref()
+
 		if typeFilter&(1<<i) == 0 {
 			continue
 		}
 
-		if memProperties.MemoryTypes[i].PropertyFlags&properties != properties {
+		if memType.PropertyFlags&properties != properties {
 			continue
 		}
 
@@ -957,6 +963,10 @@ func (h *HelloTriangleApp) recordCommandBuffer(
 	vk.CmdBeginRenderPass(commandBuffer, &renderPassInfo, vk.SubpassContentsInline)
 	vk.CmdBindPipeline(commandBuffer, vk.PipelineBindPointGraphics, h.graphicsPipline)
 
+	vertexBuffers := []vk.Buffer{h.vertexBuffer}
+	offsets := []vk.DeviceSize{0}
+	vk.CmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets)
+
 	viewport := vk.Viewport{
 		X: 0, Y: 0,
 		Width:    float32(h.swapChainExtend.Width),
@@ -972,7 +982,7 @@ func (h *HelloTriangleApp) recordCommandBuffer(
 	}
 	vk.CmdSetScissor(commandBuffer, 0, 1, []vk.Rect2D{scissor})
 
-	vk.CmdDraw(commandBuffer, 3, 1, 0, 0)
+	vk.CmdDraw(commandBuffer, uint32(len(h.vertices)), 1, 0, 0)
 	vk.CmdEndRenderPass(commandBuffer)
 
 	if err := vk.Error(vk.EndCommandBuffer(commandBuffer)); err != nil {
@@ -1438,13 +1448,13 @@ type Vertex struct {
 }
 
 func GetVertexSize() uint32 {
-	return uint32(linmath.SizeofVec2 + linmath.SizeofVec3)
+	return uint32(unsafe.Sizeof(Vertex{}))
 }
 
 func GetVertexBindingDescription() vk.VertexInputBindingDescription {
 	bindingDescription := vk.VertexInputBindingDescription{
 		Binding:   0,
-		Stride:    GetVertexSize,
+		Stride:    GetVertexSize(),
 		InputRate: vk.VertexInputRateVertex,
 	}
 
@@ -1457,13 +1467,13 @@ func GetVertexAttributeDescriptions() [2]vk.VertexInputAttributeDescription {
 			Binding:  0,
 			Location: 0,
 			Format:   vk.FormatR32g32Sfloat,
-			Offset:   0,
+			Offset:   uint32(unsafe.Offsetof(Vertex{}.pos)),
 		},
 		{
 			Binding:  0,
 			Location: 1,
 			Format:   vk.FormatR32g32b32Sfloat,
-			Offset:   uint32(linmath.SizeofVec2),
+			Offset:   uint32(unsafe.Offsetof(Vertex{}.color)),
 		},
 	}
 

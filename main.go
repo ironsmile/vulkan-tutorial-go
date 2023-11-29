@@ -79,6 +79,7 @@ func main() {
 		vertexBufferMemory: vk.NullDeviceMemory,
 		indexBuffer:        vk.NullBuffer,
 		indexBufferMemory:  vk.NullDeviceMemory,
+		descriptorPool:     vk.NullDescriptorPool,
 
 		descriptorSetLayout: vk.NullDescriptorSetLayout,
 	}
@@ -153,6 +154,9 @@ type HelloTriangleApp struct {
 	uniformBuffers       []vk.Buffer
 	uniformBuffersMemory []vk.DeviceMemory
 	uniformBuffersMapped []unsafe.Pointer
+
+	descriptorPool vk.DescriptorPool
+	descriptorSets []vk.DescriptorSet
 }
 
 // Run runs the vulkan program.
@@ -273,6 +277,14 @@ func (h *HelloTriangleApp) initVulkan() error {
 		return fmt.Errorf("createUniformBuffers: %w", err)
 	}
 
+	if err := h.createDescriptorPool(); err != nil {
+		return fmt.Errorf("createDescriptorPool: %w", err)
+	}
+
+	if err := h.createDescriptorSets(); err != nil {
+		return fmt.Errorf("createDescriptorSets: %w", err)
+	}
+
 	if err := h.createCommandBuffer(); err != nil {
 		return fmt.Errorf("createCommandBuffer: %w", err)
 	}
@@ -303,6 +315,10 @@ func (h *HelloTriangleApp) cleanupVulkan() {
 	}
 	for _, bufferMem := range h.uniformBuffersMemory {
 		vk.FreeMemory(h.device, bufferMem, nil)
+	}
+
+	if h.descriptorPool != vk.NullDescriptorPool {
+		vk.DestroyDescriptorPool(h.device, h.descriptorPool, nil)
 	}
 
 	if h.descriptorSetLayout != vk.NullDescriptorSetLayout {
@@ -766,7 +782,7 @@ func (h *HelloTriangleApp) createGraphicsPipeline() error {
 		PolygonMode:             vk.PolygonModeFill,
 		LineWidth:               1,
 		CullMode:                vk.CullModeFlags(vk.CullModeBackBit),
-		FrontFace:               vk.FrontFaceClockwise,
+		FrontFace:               vk.FrontFaceCounterClockwise,
 		DepthBiasEnable:         vk.False,
 	}
 
@@ -1130,6 +1146,73 @@ func (h *HelloTriangleApp) createUniformBuffers() error {
 	return nil
 }
 
+func (h *HelloTriangleApp) createDescriptorPool() error {
+	poolSize := vk.DescriptorPoolSize{
+		Type:            vk.DescriptorTypeUniformBuffer,
+		DescriptorCount: maxFramesInFlight,
+	}
+
+	poolInfo := vk.DescriptorPoolCreateInfo{
+		SType:         vk.StructureTypeDescriptorPoolCreateInfo,
+		PoolSizeCount: 1,
+		PPoolSizes:    []vk.DescriptorPoolSize{poolSize},
+		MaxSets:       maxFramesInFlight,
+	}
+
+	var descriptorPool vk.DescriptorPool
+	res := vk.CreateDescriptorPool(h.device, &poolInfo, nil, &descriptorPool)
+	if res != vk.Success {
+		return fmt.Errorf("failed to create descriptor pool: %w", vk.Error(res))
+	}
+	h.descriptorPool = descriptorPool
+
+	return nil
+}
+
+func (h *HelloTriangleApp) createDescriptorSets() error {
+	layouts := []vk.DescriptorSetLayout{
+		h.descriptorSetLayout,
+		h.descriptorSetLayout,
+	}
+
+	allocInfo := vk.DescriptorSetAllocateInfo{
+		SType:              vk.StructureTypeDescriptorSetAllocateInfo,
+		DescriptorPool:     h.descriptorPool,
+		DescriptorSetCount: maxFramesInFlight,
+		PSetLayouts:        layouts,
+	}
+
+	h.descriptorSets = make([]vk.DescriptorSet, maxFramesInFlight)
+
+	res := vk.AllocateDescriptorSets(h.device, &allocInfo, &h.descriptorSets[0])
+	if res != vk.Success {
+		return fmt.Errorf("failed to allocate descriptor set: %w", vk.Error(res))
+	}
+
+	for i := 0; i < maxFramesInFlight; i++ {
+		bufferInfo := vk.DescriptorBufferInfo{
+			Buffer: h.uniformBuffers[i],
+			Offset: 0,
+			Range:  vk.DeviceSize(vk.WholeSize),
+		}
+
+		descriptorWrite := vk.WriteDescriptorSet{
+			SType:           vk.StructureTypeWriteDescriptorSet,
+			DstSet:          h.descriptorSets[i],
+			DstBinding:      0,
+			DstArrayElement: 0,
+			DescriptorType:  vk.DescriptorTypeUniformBuffer,
+			DescriptorCount: 1,
+			PBufferInfo:     []vk.DescriptorBufferInfo{bufferInfo},
+		}
+
+		writes := []vk.WriteDescriptorSet{descriptorWrite}
+		vk.UpdateDescriptorSets(h.device, 1, writes, 0, nil)
+	}
+
+	return nil
+}
+
 func (h *HelloTriangleApp) createBuffer(
 	size vk.DeviceSize,
 	usage vk.BufferUsageFlags,
@@ -1275,6 +1358,17 @@ func (h *HelloTriangleApp) recordCommandBuffer(
 		Extent: h.swapChainExtend,
 	}
 	vk.CmdSetScissor(commandBuffer, 0, 1, []vk.Rect2D{scissor})
+
+	vk.CmdBindDescriptorSets(
+		commandBuffer,
+		vk.PipelineBindPointGraphics,
+		h.pipelineLayout,
+		0,
+		1,
+		[]vk.DescriptorSet{h.descriptorSets[h.curentFrame]},
+		0,
+		nil,
+	)
 
 	vk.CmdDrawIndexed(commandBuffer, uint32(len(h.indices)), 1, 0, 0, 0)
 	vk.CmdEndRenderPass(commandBuffer)
@@ -1739,7 +1833,7 @@ func (h *HelloTriangleApp) updateUniformBuffer(currentImage uint32) {
 	ubo := UniformBufferObject{}
 
 	ubo.model.Identity()
-	ubo.model.RotateZ(&ubo.model, float32(frameTime.Seconds()*90))
+	ubo.model.RotateZ(&ubo.model, float32(frameTime.Seconds()))
 	ubo.view.LookAt(
 		&linmath.Vec3{2, 2, 2},
 		&linmath.Vec3{0, 0, 0},

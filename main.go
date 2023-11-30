@@ -64,20 +64,24 @@ func main() {
 		swapChain:      vk.NullSwapchain,
 		vertices: []Vertex{
 			{
-				pos:   linmath.Vec2{-0.5, -0.5},
-				color: linmath.Vec3{1, 0, 0},
+				pos:      linmath.Vec2{-0.5, -0.5},
+				color:    linmath.Vec3{1, 0, 0},
+				texColor: linmath.Vec2{1, 0},
 			},
 			{
-				pos:   linmath.Vec2{0.5, -0.5},
-				color: linmath.Vec3{0, 1, 0},
+				pos:      linmath.Vec2{0.5, -0.5},
+				color:    linmath.Vec3{0, 1, 0},
+				texColor: linmath.Vec2{0, 0},
 			},
 			{
-				pos:   linmath.Vec2{0.5, 0.5},
-				color: linmath.Vec3{0, 0, 1},
+				pos:      linmath.Vec2{0.5, 0.5},
+				color:    linmath.Vec3{0, 0, 1},
+				texColor: linmath.Vec2{0, 1},
 			},
 			{
-				pos:   linmath.Vec2{-0.5, 0.5},
-				color: linmath.Vec3{1, 1, 1},
+				pos:      linmath.Vec2{-0.5, 0.5},
+				color:    linmath.Vec3{1, 1, 1},
+				texColor: linmath.Vec2{1, 1},
 			},
 		},
 		indices:            []uint16{0, 1, 2, 2, 3, 0},
@@ -682,10 +686,23 @@ func (h *HelloTriangleApp) createDescriptorSetLayout() error {
 		PImmutableSamplers: nil,
 	}
 
+	samplerLayoutBinding := vk.DescriptorSetLayoutBinding{
+		Binding:            1,
+		DescriptorCount:    1,
+		DescriptorType:     vk.DescriptorTypeCombinedImageSampler,
+		PImmutableSamplers: nil,
+		StageFlags:         vk.ShaderStageFlags(vk.ShaderStageFragmentBit),
+	}
+
+	bindings := []vk.DescriptorSetLayoutBinding{
+		uboLayoutBinding,
+		samplerLayoutBinding,
+	}
+
 	layoutInfo := vk.DescriptorSetLayoutCreateInfo{
 		SType:        vk.StructureTypeDescriptorSetLayoutCreateInfo,
-		BindingCount: 1,
-		PBindings:    []vk.DescriptorSetLayoutBinding{uboLayoutBinding},
+		BindingCount: uint32(len(bindings)),
+		PBindings:    bindings,
 	}
 
 	var descriptorSetLayout vk.DescriptorSetLayout
@@ -1296,15 +1313,21 @@ func (h *HelloTriangleApp) createUniformBuffers() error {
 }
 
 func (h *HelloTriangleApp) createDescriptorPool() error {
-	poolSize := vk.DescriptorPoolSize{
-		Type:            vk.DescriptorTypeUniformBuffer,
-		DescriptorCount: maxFramesInFlight,
+	poolSizes := []vk.DescriptorPoolSize{
+		{
+			Type:            vk.DescriptorTypeUniformBuffer,
+			DescriptorCount: maxFramesInFlight,
+		},
+		{
+			Type:            vk.DescriptorTypeCombinedImageSampler,
+			DescriptorCount: maxFramesInFlight,
+		},
 	}
 
 	poolInfo := vk.DescriptorPoolCreateInfo{
 		SType:         vk.StructureTypeDescriptorPoolCreateInfo,
-		PoolSizeCount: 1,
-		PPoolSizes:    []vk.DescriptorPoolSize{poolSize},
+		PoolSizeCount: uint32(len(poolSizes)),
+		PPoolSizes:    poolSizes,
 		MaxSets:       maxFramesInFlight,
 	}
 
@@ -1345,18 +1368,40 @@ func (h *HelloTriangleApp) createDescriptorSets() error {
 			Range:  vk.DeviceSize(vk.WholeSize),
 		}
 
-		descriptorWrite := vk.WriteDescriptorSet{
-			SType:           vk.StructureTypeWriteDescriptorSet,
-			DstSet:          h.descriptorSets[i],
-			DstBinding:      0,
-			DstArrayElement: 0,
-			DescriptorType:  vk.DescriptorTypeUniformBuffer,
-			DescriptorCount: 1,
-			PBufferInfo:     []vk.DescriptorBufferInfo{bufferInfo},
+		imageInfo := vk.DescriptorImageInfo{
+			ImageLayout: vk.ImageLayoutShaderReadOnlyOptimal,
+			ImageView:   h.textureImageView,
+			Sampler:     h.textureSampler,
 		}
 
-		writes := []vk.WriteDescriptorSet{descriptorWrite}
-		vk.UpdateDescriptorSets(h.device, 1, writes, 0, nil)
+		descriptorWrites := []vk.WriteDescriptorSet{
+			{
+				SType:           vk.StructureTypeWriteDescriptorSet,
+				DstSet:          h.descriptorSets[i],
+				DstBinding:      0,
+				DstArrayElement: 0,
+				DescriptorType:  vk.DescriptorTypeUniformBuffer,
+				DescriptorCount: 1,
+				PBufferInfo:     []vk.DescriptorBufferInfo{bufferInfo},
+			},
+			{
+				SType:           vk.StructureTypeWriteDescriptorSet,
+				DstSet:          h.descriptorSets[i],
+				DstBinding:      1,
+				DstArrayElement: 0,
+				DescriptorType:  vk.DescriptorTypeCombinedImageSampler,
+				DescriptorCount: 1,
+				PImageInfo:      []vk.DescriptorImageInfo{imageInfo},
+			},
+		}
+
+		vk.UpdateDescriptorSets(
+			h.device,
+			uint32(len(descriptorWrites)),
+			descriptorWrites,
+			0,
+			nil,
+		)
 	}
 
 	return nil
@@ -2247,8 +2292,9 @@ func (h *HelloTriangleApp) cleanup() error {
 }
 
 type Vertex struct {
-	pos   linmath.Vec2
-	color linmath.Vec3
+	pos      linmath.Vec2
+	color    linmath.Vec3
+	texColor linmath.Vec2
 }
 
 func GetVertexSize() uint32 {
@@ -2265,8 +2311,8 @@ func GetVertexBindingDescription() vk.VertexInputBindingDescription {
 	return bindingDescription
 }
 
-func GetVertexAttributeDescriptions() [2]vk.VertexInputAttributeDescription {
-	attrDescr := [2]vk.VertexInputAttributeDescription{
+func GetVertexAttributeDescriptions() [3]vk.VertexInputAttributeDescription {
+	attrDescr := [3]vk.VertexInputAttributeDescription{
 		{
 			Binding:  0,
 			Location: 0,
@@ -2278,6 +2324,12 @@ func GetVertexAttributeDescriptions() [2]vk.VertexInputAttributeDescription {
 			Location: 1,
 			Format:   vk.FormatR32g32b32Sfloat,
 			Offset:   uint32(unsafe.Offsetof(Vertex{}.color)),
+		},
+		{
+			Binding:  0,
+			Location: 2,
+			Format:   vk.FormatR32g32Sfloat,
+			Offset:   uint32(unsafe.Offsetof(Vertex{}.texColor)),
 		},
 	}
 

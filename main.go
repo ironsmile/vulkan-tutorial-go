@@ -89,6 +89,7 @@ func main() {
 
 		textureImage:       vk.NullImage,
 		textureImageMemory: vk.NullDeviceMemory,
+		textureSampler:     vk.NullSampler,
 
 		descriptorSetLayout: vk.NullDescriptorSetLayout,
 	}
@@ -169,6 +170,8 @@ type HelloTriangleApp struct {
 
 	textureImage       vk.Image
 	textureImageMemory vk.DeviceMemory
+	textureImageView   vk.ImageView
+	textureSampler     vk.Sampler
 }
 
 // Run runs the vulkan program.
@@ -281,6 +284,14 @@ func (h *HelloTriangleApp) initVulkan() error {
 		return fmt.Errorf("createTextureImage: %w", err)
 	}
 
+	if err := h.createTextureImageView(); err != nil {
+		return fmt.Errorf("createTextureImageView: %w", err)
+	}
+
+	if err := h.createTextureSampler(); err != nil {
+		return fmt.Errorf("createTextureSampler: %w", err)
+	}
+
 	if err := h.createVertexBuffer(); err != nil {
 		return fmt.Errorf("createVertexBuffer: %w", err)
 	}
@@ -325,6 +336,14 @@ func (h *HelloTriangleApp) cleanupVulkan() {
 	vk.DestroyPipelineLayout(h.device, h.pipelineLayout, nil)
 
 	h.cleanupSwapChain()
+
+	if h.textureSampler != vk.NullSampler {
+		vk.DestroySampler(h.device, h.textureSampler, nil)
+	}
+
+	if h.textureImageView != vk.NullImageView {
+		vk.DestroyImageView(h.device, h.textureImageView, nil)
+	}
 
 	if h.textureImage != vk.NullImage {
 		vk.DestroyImage(h.device, h.textureImage, nil)
@@ -462,8 +481,9 @@ func (h *HelloTriangleApp) createLogicalDevice() error {
 		)
 	}
 
-	//!TODO: left for later use
-	deviceFeatures := []vk.PhysicalDeviceFeatures{{}}
+	deviceFeatures := []vk.PhysicalDeviceFeatures{{
+		SamplerAnisotropy: vk.True,
+	}}
 
 	createInfo := vk.DeviceCreateInfo{
 		SType:            vk.StructureTypeDeviceCreateInfo,
@@ -590,29 +610,8 @@ func (h *HelloTriangleApp) recreateSwapChain() error {
 func (h *HelloTriangleApp) createImageViews() error {
 	for i, swapChainImage := range h.swapChainImages {
 		swapChainImage := swapChainImage
-		createInfo := vk.ImageViewCreateInfo{
-			SType:    vk.StructureTypeImageViewCreateInfo,
-			Image:    swapChainImage,
-			ViewType: vk.ImageViewType2d,
-			Format:   h.swapChainImageFormat,
-			Components: vk.ComponentMapping{
-				R: vk.ComponentSwizzleIdentity,
-				G: vk.ComponentSwizzleIdentity,
-				B: vk.ComponentSwizzleIdentity,
-				A: vk.ComponentSwizzleIdentity,
-			},
-			SubresourceRange: vk.ImageSubresourceRange{
-				AspectMask:     vk.ImageAspectFlags(vk.ImageAspectColorBit),
-				BaseMipLevel:   0,
-				LevelCount:     1,
-				BaseArrayLayer: 0,
-				LayerCount:     1,
-			},
-		}
-
-		var imageView vk.ImageView
-		res := vk.CreateImageView(h.device, &createInfo, nil, &imageView)
-		if err := vk.Error(res); err != nil {
+		imageView, err := h.createImageView(swapChainImage, h.swapChainImageFormat)
+		if err != nil {
 			return fmt.Errorf("failed to create image %d: %w", i, err)
 		}
 
@@ -1599,6 +1598,83 @@ func (h *HelloTriangleApp) createTextureImage() error {
 	return nil
 }
 
+func (h *HelloTriangleApp) createTextureImageView() error {
+	textureImageView, err := h.createImageView(h.textureImage, vk.FormatR8g8b8a8Srgb)
+	if err != nil {
+		return err
+	}
+	h.textureImageView = textureImageView
+
+	return nil
+}
+
+func (h *HelloTriangleApp) createImageView(
+	image vk.Image,
+	format vk.Format,
+) (vk.ImageView, error) {
+	createInfo := vk.ImageViewCreateInfo{
+		SType:    vk.StructureTypeImageViewCreateInfo,
+		Image:    image,
+		ViewType: vk.ImageViewType2d,
+		Format:   format,
+		Components: vk.ComponentMapping{
+			R: vk.ComponentSwizzleIdentity,
+			G: vk.ComponentSwizzleIdentity,
+			B: vk.ComponentSwizzleIdentity,
+			A: vk.ComponentSwizzleIdentity,
+		},
+		SubresourceRange: vk.ImageSubresourceRange{
+			AspectMask:     vk.ImageAspectFlags(vk.ImageAspectColorBit),
+			BaseMipLevel:   0,
+			LevelCount:     1,
+			BaseArrayLayer: 0,
+			LayerCount:     1,
+		},
+	}
+
+	var imageView vk.ImageView
+	res := vk.CreateImageView(h.device, &createInfo, nil, &imageView)
+	if err := vk.Error(res); err != nil {
+		return nil, fmt.Errorf("failed to create image view: %w", err)
+	}
+
+	return imageView, nil
+}
+
+func (h *HelloTriangleApp) createTextureSampler() error {
+	var properties vk.PhysicalDeviceProperties
+	vk.GetPhysicalDeviceProperties(h.physicalDevice, &properties)
+	properties.Deref()
+	properties.Limits.Deref()
+
+	samplerInfo := vk.SamplerCreateInfo{
+		SType:                   vk.StructureTypeSamplerCreateInfo,
+		MagFilter:               vk.FilterLinear,
+		MinFilter:               vk.FilterLinear,
+		AddressModeU:            vk.SamplerAddressModeRepeat,
+		AddressModeV:            vk.SamplerAddressModeRepeat,
+		AddressModeW:            vk.SamplerAddressModeRepeat,
+		AnisotropyEnable:        vk.True,
+		MaxAnisotropy:           properties.Limits.MaxSamplerAnisotropy,
+		UnnormalizedCoordinates: vk.False,
+		CompareEnable:           vk.False,
+		CompareOp:               vk.CompareOpAlways,
+		MipmapMode:              vk.SamplerMipmapModeLinear,
+		MipLodBias:              0,
+		MinLod:                  0,
+		MaxLod:                  0,
+	}
+
+	var sampler vk.Sampler
+	res := vk.CreateSampler(h.device, &samplerInfo, nil, &sampler)
+	if res != vk.Success {
+		return fmt.Errorf("failed to create sampler: %w", vk.Error(res))
+	}
+	h.textureSampler = sampler
+
+	return nil
+}
+
 func (h *HelloTriangleApp) createCommandBuffer() error {
 	allocInfo := vk.CommandBufferAllocateInfo{
 		SType:              vk.StructureTypeCommandBufferAllocateInfo,
@@ -1897,7 +1973,12 @@ func (h *HelloTriangleApp) isDeviceSuitable(device vk.PhysicalDevice) bool {
 			len(swapChainSupport.presentModes) > 0
 	}
 
-	return indices.IsComplete() && extensionsSupported && swapChainAdequate
+	var supportedFeatures vk.PhysicalDeviceFeatures
+	vk.GetPhysicalDeviceFeatures(device, &supportedFeatures)
+	supportedFeatures.Deref()
+
+	return indices.IsComplete() && extensionsSupported && swapChainAdequate &&
+		supportedFeatures.SamplerAnisotropy.B()
 }
 
 func (h *HelloTriangleApp) chooseSwapSurfaceFormat(

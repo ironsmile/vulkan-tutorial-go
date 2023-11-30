@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"flag"
 	"fmt"
+	"image"
 	"log"
 	"math"
 	"reflect"
@@ -11,8 +12,13 @@ import (
 	"time"
 	"unsafe"
 
+	// Used for decoding textures
+	"image/draw"
+	_ "image/jpeg"
+
 	"vulkan-tutorial/queues"
 	"vulkan-tutorial/shaders"
+	"vulkan-tutorial/textures"
 	"vulkan-tutorial/unsafer"
 
 	"github.com/go-gl/glfw/v3.3/glfw"
@@ -80,6 +86,9 @@ func main() {
 		indexBuffer:        vk.NullBuffer,
 		indexBufferMemory:  vk.NullDeviceMemory,
 		descriptorPool:     vk.NullDescriptorPool,
+
+		textureImage:       vk.NullImage,
+		textureImageMemory: vk.NullDeviceMemory,
 
 		descriptorSetLayout: vk.NullDescriptorSetLayout,
 	}
@@ -157,6 +166,9 @@ type HelloTriangleApp struct {
 
 	descriptorPool vk.DescriptorPool
 	descriptorSets []vk.DescriptorSet
+
+	textureImage       vk.Image
+	textureImageMemory vk.DeviceMemory
 }
 
 // Run runs the vulkan program.
@@ -265,6 +277,10 @@ func (h *HelloTriangleApp) initVulkan() error {
 		return fmt.Errorf("createCommandPool: %w", err)
 	}
 
+	if err := h.createTextureImage(); err != nil {
+		return fmt.Errorf("createTextureImage: %w", err)
+	}
+
 	if err := h.createVertexBuffer(); err != nil {
 		return fmt.Errorf("createVertexBuffer: %w", err)
 	}
@@ -309,6 +325,13 @@ func (h *HelloTriangleApp) cleanupVulkan() {
 	vk.DestroyPipelineLayout(h.device, h.pipelineLayout, nil)
 
 	h.cleanupSwapChain()
+
+	if h.textureImage != vk.NullImage {
+		vk.DestroyImage(h.device, h.textureImage, nil)
+	}
+	if h.textureImageMemory != vk.NullDeviceMemory {
+		vk.FreeMemory(h.device, h.textureImageMemory, nil)
+	}
 
 	for _, buffer := range h.uniformBuffers {
 		vk.DestroyBuffer(h.device, buffer, nil)
@@ -1053,7 +1076,23 @@ func (h *HelloTriangleApp) copyBuffer(
 	dstBuffer vk.Buffer,
 	size vk.DeviceSize,
 ) error {
+	commandBuffer, err := h.beginSingleTimeCommands()
+	if err != nil {
+		return fmt.Errorf("failed to begin single time commands: %w", err)
+	}
 
+	copyRegion := vk.BufferCopy{
+		SrcOffset: 0,
+		DstOffset: 0,
+		Size:      size,
+	}
+
+	vk.CmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, []vk.BufferCopy{copyRegion})
+
+	return h.endSingleTimeCommands(commandBuffer)
+}
+
+func (h *HelloTriangleApp) beginSingleTimeCommands() (vk.CommandBuffer, error) {
 	allocInfo := vk.CommandBufferAllocateInfo{
 		SType:              vk.StructureTypeCommandBufferAllocateInfo,
 		Level:              vk.CommandBufferLevelPrimary,
@@ -1068,13 +1107,9 @@ func (h *HelloTriangleApp) copyBuffer(
 		commandBuffers,
 	)
 	if res != vk.Success {
-		return fmt.Errorf("failed to allocate command buffer: %w", vk.Error(res))
+		return nil, fmt.Errorf("failed to allocate command buffer: %w", vk.Error(res))
 	}
 	commandBuffer := commandBuffers[0]
-
-	defer func() {
-		vk.FreeCommandBuffers(h.device, h.commandPool, 1, commandBuffers)
-	}()
 
 	beginInfo := vk.CommandBufferBeginInfo{
 		SType: vk.StructureTypeCommandBufferBeginInfo,
@@ -1083,15 +1118,17 @@ func (h *HelloTriangleApp) copyBuffer(
 
 	vk.BeginCommandBuffer(commandBuffer, &beginInfo)
 
-	copyRegion := vk.BufferCopy{
-		SrcOffset: 0,
-		DstOffset: 0,
-		Size:      size,
-	}
+	return commandBuffer, nil
+}
 
-	vk.CmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, []vk.BufferCopy{copyRegion})
+func (h *HelloTriangleApp) endSingleTimeCommands(commandBuffer vk.CommandBuffer) error {
+	commandBuffers := []vk.CommandBuffer{commandBuffer}
 
-	res = vk.EndCommandBuffer(commandBuffer)
+	defer func() {
+		vk.FreeCommandBuffers(h.device, h.commandPool, 1, commandBuffers)
+	}()
+
+	res := vk.EndCommandBuffer(commandBuffer)
 	if res != vk.Success {
 		return fmt.Errorf("failed end command buffer: %w", vk.Error(res))
 	}
@@ -1113,6 +1150,119 @@ func (h *HelloTriangleApp) copyBuffer(
 	}
 
 	return nil
+}
+
+func (h *HelloTriangleApp) transitionImageLayout(
+	image vk.Image,
+	format vk.Format,
+	oldLayout vk.ImageLayout,
+	newLayout vk.ImageLayout,
+) error {
+	commandBuffer, err := h.beginSingleTimeCommands()
+	if err != nil {
+		return fmt.Errorf("failed to begin single time commands: %w", err)
+	}
+
+	barrier := vk.ImageMemoryBarrier{
+		SType:               vk.StructureTypeImageMemoryBarrier,
+		OldLayout:           oldLayout,
+		NewLayout:           newLayout,
+		SrcQueueFamilyIndex: vk.QueueFamilyIgnored,
+		DstQueueFamilyIndex: vk.QueueFamilyIgnored,
+		Image:               image,
+		SubresourceRange: vk.ImageSubresourceRange{
+			AspectMask:     vk.ImageAspectFlags(vk.ImageAspectColorBit),
+			BaseMipLevel:   0,
+			LevelCount:     1,
+			BaseArrayLayer: 0,
+			LayerCount:     1,
+		},
+		SrcAccessMask: 0,
+		DstAccessMask: 0,
+	}
+
+	var (
+		sourceStage      vk.PipelineStageFlags
+		destinationStage vk.PipelineStageFlags
+	)
+
+	if oldLayout == vk.ImageLayoutUndefined &&
+		newLayout == vk.ImageLayoutTransferDstOptimal {
+
+		barrier.SrcAccessMask = 0
+		barrier.DstAccessMask = vk.AccessFlags(vk.AccessTransferWriteBit)
+
+		sourceStage = vk.PipelineStageFlags(vk.PipelineStageTopOfPipeBit)
+		destinationStage = vk.PipelineStageFlags(vk.PipelineStageTransferBit)
+
+	} else if oldLayout == vk.ImageLayoutTransferDstOptimal &&
+		newLayout == vk.ImageLayoutShaderReadOnlyOptimal {
+
+		barrier.SrcAccessMask = vk.AccessFlags(vk.AccessTransferWriteBit)
+		barrier.DstAccessMask = vk.AccessFlags(vk.AccessShaderReadBit)
+
+		sourceStage = vk.PipelineStageFlags(vk.PipelineStageTransferBit)
+		destinationStage = vk.PipelineStageFlags(vk.PipelineStageFragmentShaderBit)
+
+	} else {
+		return fmt.Errorf("unsupported layout transition")
+	}
+
+	vk.CmdPipelineBarrier(
+		commandBuffer,
+		sourceStage, destinationStage,
+		0,
+		0, nil,
+		0, nil,
+		1, []vk.ImageMemoryBarrier{barrier},
+	)
+
+	return h.endSingleTimeCommands(commandBuffer)
+}
+
+func (h *HelloTriangleApp) copyBufferToImage(
+	buffer vk.Buffer,
+	image vk.Image,
+	width, height uint32,
+) error {
+	commandBuffer, err := h.beginSingleTimeCommands()
+	if err != nil {
+		return fmt.Errorf("failed to beging single time command buffer: %w", err)
+	}
+
+	region := vk.BufferImageCopy{
+		BufferOffset:      0,
+		BufferRowLength:   0,
+		BufferImageHeight: 0,
+
+		ImageSubresource: vk.ImageSubresourceLayers{
+			AspectMask:     vk.ImageAspectFlags(vk.ImageAspectColorBit),
+			MipLevel:       0,
+			BaseArrayLayer: 0,
+			LayerCount:     1,
+		},
+
+		ImageOffset: vk.Offset3D{
+			X: 0, Y: 0, Z: 0,
+		},
+
+		ImageExtent: vk.Extent3D{
+			Width:  width,
+			Height: height,
+			Depth:  1,
+		},
+	}
+
+	vk.CmdCopyBufferToImage(
+		commandBuffer,
+		buffer,
+		image,
+		vk.ImageLayoutTransferDstOptimal,
+		1,
+		[]vk.BufferImageCopy{region},
+	)
+
+	return h.endSingleTimeCommands(commandBuffer)
 }
 
 func (h *HelloTriangleApp) createUniformBuffers() error {
@@ -1260,6 +1410,67 @@ func (h *HelloTriangleApp) createBuffer(
 	return nil
 }
 
+func (h *HelloTriangleApp) createImage(
+	width uint32,
+	height uint32,
+	format vk.Format,
+	tiling vk.ImageTiling,
+	usage vk.ImageUsageFlags,
+	properties vk.MemoryPropertyFlags,
+	image *vk.Image,
+	imageMemory *vk.DeviceMemory,
+) error {
+	imageInfo := vk.ImageCreateInfo{
+		SType:     vk.StructureTypeImageCreateInfo,
+		ImageType: vk.ImageType2d,
+		Extent: vk.Extent3D{
+			Width:  width,
+			Height: height,
+			Depth:  1,
+		},
+		MipLevels:     1,
+		ArrayLayers:   1,
+		Format:        format,
+		Tiling:        tiling,
+		InitialLayout: vk.ImageLayoutUndefined,
+		Usage:         usage,
+		SharingMode:   vk.SharingModeExclusive,
+		Samples:       vk.SampleCount1Bit,
+	}
+
+	res := vk.CreateImage(h.device, &imageInfo, nil, image)
+	if res != vk.Success {
+		return fmt.Errorf("failed to create an image: %w", vk.Error(res))
+	}
+
+	var memRequirements vk.MemoryRequirements
+	vk.GetImageMemoryRequirements(h.device, *image, &memRequirements)
+	memRequirements.Deref()
+
+	memTypeIndex, err := h.findMemoryType(memRequirements.MemoryTypeBits, properties)
+	if err != nil {
+		return err
+	}
+
+	allocInfo := vk.MemoryAllocateInfo{
+		SType:           vk.StructureTypeMemoryAllocateInfo,
+		AllocationSize:  memRequirements.Size,
+		MemoryTypeIndex: memTypeIndex,
+	}
+
+	res = vk.AllocateMemory(h.device, &allocInfo, nil, imageMemory)
+	if res != vk.Success {
+		return fmt.Errorf("failed to allocate image buffer memory: %s", vk.Error(res))
+	}
+
+	res = vk.BindImageMemory(h.device, *image, *imageMemory, 0)
+	if res != vk.Success {
+		return fmt.Errorf("failed to bind image memory: %w", vk.Error(res))
+	}
+
+	return nil
+}
+
 func (h *HelloTriangleApp) findMemoryType(
 	typeFilter uint32,
 	properties vk.MemoryPropertyFlags,
@@ -1284,6 +1495,108 @@ func (h *HelloTriangleApp) findMemoryType(
 	}
 
 	return 0, fmt.Errorf("failed to find suitable memory type")
+}
+
+func (h *HelloTriangleApp) createTextureImage() error {
+	fh, err := textures.FS.Open("texture.jpg")
+	if err != nil {
+		return fmt.Errorf("failed to open texture file: %w", err)
+	}
+	defer fh.Close()
+
+	img, _, err := image.Decode(fh)
+	if err != nil {
+		return fmt.Errorf("failed to decode texture image: %w", err)
+	}
+
+	imgBoundsSize := img.Bounds().Size()
+	texWidth := uint32(imgBoundsSize.X)
+	texHeight := uint32(imgBoundsSize.Y)
+
+	imgSize := vk.DeviceSize(texWidth * texHeight * 4)
+
+	var (
+		staginbBuffer       vk.Buffer
+		stagingBufferMemory vk.DeviceMemory
+	)
+
+	err = h.createBuffer(
+		imgSize,
+		vk.BufferUsageFlags(vk.BufferUsageTransferSrcBit),
+		vk.MemoryPropertyFlags(vk.MemoryPropertyHostVisibleBit)|
+			vk.MemoryPropertyFlags(vk.MemoryPropertyHostCoherentBit),
+		&staginbBuffer,
+		&stagingBufferMemory,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create texture GPU buffer: %w", err)
+	}
+
+	defer func() {
+		vk.DestroyBuffer(h.device, staginbBuffer, nil)
+		vk.FreeMemory(h.device, stagingBufferMemory, nil)
+	}()
+
+	var pData unsafe.Pointer
+	vk.MapMemory(h.device, stagingBufferMemory, 0, imgSize, 0, &pData)
+	defer vk.UnmapMemory(h.device, stagingBufferMemory)
+
+	// convert the image to RGBA if it is not already
+	b := img.Bounds()
+	rgbaImg := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+	draw.Draw(rgbaImg, rgbaImg.Bounds(), img, b.Min, draw.Src)
+
+	// copy its data
+	vk.Memcopy(pData, rgbaImg.Pix)
+
+	var (
+		textureImage       vk.Image
+		textureImageMemory vk.DeviceMemory
+	)
+
+	err = h.createImage(
+		texWidth,
+		texHeight,
+		vk.FormatR8g8b8a8Srgb,
+		vk.ImageTilingOptimal,
+		vk.ImageUsageFlags(vk.ImageUsageTransferDstBit)|
+			vk.ImageUsageFlags(vk.ImageUsageSampledBit),
+		vk.MemoryPropertyFlags(vk.MemoryPropertyDeviceLocalBit),
+		&textureImage,
+		&textureImageMemory,
+	)
+	if err != nil {
+		return fmt.Errorf("filed to create Vulkan image: %w", err)
+	}
+	h.textureImage = textureImage
+	h.textureImageMemory = textureImageMemory
+
+	err = h.transitionImageLayout(
+		h.textureImage,
+		vk.FormatR8g8b8a8Srgb,
+		vk.ImageLayoutUndefined,
+		vk.ImageLayoutTransferDstOptimal,
+	)
+	if err != nil {
+		return fmt.Errorf("transition image layout: %w", err)
+	}
+
+	err = h.copyBufferToImage(staginbBuffer, h.textureImage, texWidth, texHeight)
+	if err != nil {
+		return fmt.Errorf("copying buffer to image: %w", err)
+	}
+
+	err = h.transitionImageLayout(
+		h.textureImage,
+		vk.FormatR8g8b8a8Srgb,
+		vk.ImageLayoutTransferDstOptimal,
+		vk.ImageLayoutShaderReadOnlyOptimal,
+	)
+	if err != nil {
+		return fmt.Errorf("transitioning to read only optimal layout: %w", err)
+	}
+
+	return nil
 }
 
 func (h *HelloTriangleApp) createCommandBuffer() error {

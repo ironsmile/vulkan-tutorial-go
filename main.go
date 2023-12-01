@@ -64,27 +64,51 @@ func main() {
 		swapChain:      vk.NullSwapchain,
 		vertices: []Vertex{
 			{
-				pos:      linmath.Vec2{-0.5, -0.5},
+				pos:      linmath.Vec3{-0.5, -0.5, 0},
 				color:    linmath.Vec3{1, 0, 0},
 				texColor: linmath.Vec2{1, 0},
 			},
 			{
-				pos:      linmath.Vec2{0.5, -0.5},
+				pos:      linmath.Vec3{0.5, -0.5, 0},
 				color:    linmath.Vec3{0, 1, 0},
 				texColor: linmath.Vec2{0, 0},
 			},
 			{
-				pos:      linmath.Vec2{0.5, 0.5},
+				pos:      linmath.Vec3{0.5, 0.5, 0},
 				color:    linmath.Vec3{0, 0, 1},
 				texColor: linmath.Vec2{0, 1},
 			},
 			{
-				pos:      linmath.Vec2{-0.5, 0.5},
+				pos:      linmath.Vec3{-0.5, 0.5, 0},
+				color:    linmath.Vec3{1, 1, 1},
+				texColor: linmath.Vec2{1, 1},
+			},
+
+			{
+				pos:      linmath.Vec3{-0.5, -0.5, -0.5},
+				color:    linmath.Vec3{1, 0, 0},
+				texColor: linmath.Vec2{1, 0},
+			},
+			{
+				pos:      linmath.Vec3{0.5, -0.5, -0.5},
+				color:    linmath.Vec3{0, 1, 0},
+				texColor: linmath.Vec2{0, 0},
+			},
+			{
+				pos:      linmath.Vec3{0.5, 0.5, -0.5},
+				color:    linmath.Vec3{0, 0, 1},
+				texColor: linmath.Vec2{0, 1},
+			},
+			{
+				pos:      linmath.Vec3{-0.5, 0.5, -0.5},
 				color:    linmath.Vec3{1, 1, 1},
 				texColor: linmath.Vec2{1, 1},
 			},
 		},
-		indices:            []uint16{0, 1, 2, 2, 3, 0},
+		indices: []uint16{
+			0, 1, 2, 2, 3, 0,
+			4, 5, 6, 6, 7, 4,
+		},
 		vertexBuffer:       vk.NullBuffer,
 		vertexBufferMemory: vk.NullDeviceMemory,
 		indexBuffer:        vk.NullBuffer,
@@ -176,6 +200,10 @@ type HelloTriangleApp struct {
 	textureImageMemory vk.DeviceMemory
 	textureImageView   vk.ImageView
 	textureSampler     vk.Sampler
+
+	depthImage       vk.Image
+	depthImageMemory vk.DeviceMemory
+	depthImageView   vk.ImageView
 }
 
 // Run runs the vulkan program.
@@ -276,12 +304,16 @@ func (h *HelloTriangleApp) initVulkan() error {
 		return fmt.Errorf("createGraphicsPipeline: %w", err)
 	}
 
-	if err := h.createFramebuffers(); err != nil {
-		return fmt.Errorf("createFramebuffers: %w", err)
-	}
-
 	if err := h.createCommandPool(); err != nil {
 		return fmt.Errorf("createCommandPool: %w", err)
+	}
+
+	if err := h.createDepthResources(); err != nil {
+		return fmt.Errorf("createDepthResources: %w", err)
+	}
+
+	if err := h.createFramebuffers(); err != nil {
+		return fmt.Errorf("createFramebuffers: %w", err)
 	}
 
 	if err := h.createTextureImage(); err != nil {
@@ -397,6 +429,18 @@ func (h *HelloTriangleApp) cleanupVulkan() {
 }
 
 func (h *HelloTriangleApp) cleanupSwapChain() {
+	if h.depthImageView != vk.NullImageView {
+		vk.DestroyImageView(h.device, h.depthImageView, nil)
+	}
+
+	if h.depthImage != vk.NullImage {
+		vk.DestroyImage(h.device, h.depthImage, nil)
+	}
+
+	if h.depthImageMemory != vk.NullDeviceMemory {
+		vk.FreeMemory(h.device, h.depthImageMemory, nil)
+	}
+
 	for _, frameBuffer := range h.swapChainFramebuffers {
 		vk.DestroyFramebuffer(h.device, frameBuffer, nil)
 	}
@@ -604,6 +648,9 @@ func (h *HelloTriangleApp) recreateSwapChain() error {
 	if err := h.createImageViews(); err != nil {
 		return fmt.Errorf("createImageViews: %w", err)
 	}
+	if err := h.createDepthResources(); err != nil {
+		return fmt.Errorf("createDepthResources: %w", err)
+	}
 	if err := h.createFramebuffers(); err != nil {
 		return fmt.Errorf("createFramebuffers: %w", err)
 	}
@@ -614,7 +661,11 @@ func (h *HelloTriangleApp) recreateSwapChain() error {
 func (h *HelloTriangleApp) createImageViews() error {
 	for i, swapChainImage := range h.swapChainImages {
 		swapChainImage := swapChainImage
-		imageView, err := h.createImageView(swapChainImage, h.swapChainImageFormat)
+		imageView, err := h.createImageView(
+			swapChainImage,
+			h.swapChainImageFormat,
+			vk.ImageAspectFlags(vk.ImageAspectColorBit),
+		)
 		if err != nil {
 			return fmt.Errorf("failed to create image %d: %w", i, err)
 		}
@@ -626,6 +677,27 @@ func (h *HelloTriangleApp) createImageViews() error {
 }
 
 func (h *HelloTriangleApp) createRenderPass() error {
+	depthFormat, err := h.findDepthFormat()
+	if err != nil {
+		return fmt.Errorf("cannot find suitable depth image format: %w", err)
+	}
+
+	depthAttachment := vk.AttachmentDescription{
+		Format:         depthFormat,
+		Samples:        vk.SampleCount1Bit,
+		LoadOp:         vk.AttachmentLoadOpClear,
+		StoreOp:        vk.AttachmentStoreOpDontCare,
+		StencilLoadOp:  vk.AttachmentLoadOpDontCare,
+		StencilStoreOp: vk.AttachmentStoreOpDontCare,
+		InitialLayout:  vk.ImageLayoutUndefined,
+		FinalLayout:    vk.ImageLayoutDepthStencilAttachmentOptimal,
+	}
+
+	depthAttachmentRef := vk.AttachmentReference{
+		Attachment: 1,
+		Layout:     vk.ImageLayoutDepthStencilAttachmentOptimal,
+	}
+
 	colorAttachment := vk.AttachmentDescription{
 		Format:         h.swapChainImageFormat,
 		Samples:        vk.SampleCount1Bit,
@@ -643,24 +715,33 @@ func (h *HelloTriangleApp) createRenderPass() error {
 	}
 
 	subpass := vk.SubpassDescription{
-		PipelineBindPoint:    vk.PipelineBindPointGraphics,
-		ColorAttachmentCount: 1,
-		PColorAttachments:    []vk.AttachmentReference{colorAttachmentRef},
+		PipelineBindPoint:       vk.PipelineBindPointGraphics,
+		ColorAttachmentCount:    1,
+		PColorAttachments:       []vk.AttachmentReference{colorAttachmentRef},
+		PDepthStencilAttachment: &depthAttachmentRef,
 	}
 
 	dependency := vk.SubpassDependency{
-		SrcSubpass:    vk.SubpassExternal,
-		DstSubpass:    0,
-		SrcStageMask:  vk.PipelineStageFlags(vk.PipelineStageColorAttachmentOutputBit),
+		SrcSubpass: vk.SubpassExternal,
+		DstSubpass: 0,
+		SrcStageMask: vk.PipelineStageFlags(vk.PipelineStageColorAttachmentOutputBit) |
+			vk.PipelineStageFlags(vk.PipelineStageEarlyFragmentTestsBit),
 		SrcAccessMask: 0,
-		DstStageMask:  vk.PipelineStageFlags(vk.PipelineStageColorAttachmentOutputBit),
-		DstAccessMask: vk.AccessFlags(vk.AccessColorAttachmentWriteBit),
+		DstStageMask: vk.PipelineStageFlags(vk.PipelineStageColorAttachmentOutputBit) |
+			vk.PipelineStageFlags(vk.PipelineStageEarlyFragmentTestsBit),
+		DstAccessMask: vk.AccessFlags(vk.AccessColorAttachmentWriteBit) |
+			vk.AccessFlags(vk.AccessDepthStencilAttachmentWriteBit),
+	}
+
+	attachments := []vk.AttachmentDescription{
+		colorAttachment,
+		depthAttachment,
 	}
 
 	rederPassInfo := vk.RenderPassCreateInfo{
 		SType:           vk.StructureTypeRenderPassCreateInfo,
-		AttachmentCount: 1,
-		PAttachments:    []vk.AttachmentDescription{colorAttachment},
+		AttachmentCount: uint32(len(attachments)),
+		PAttachments:    attachments,
 		SubpassCount:    1,
 		PSubpasses:      []vk.SubpassDescription{subpass},
 		DependencyCount: 1,
@@ -873,6 +954,17 @@ func (h *HelloTriangleApp) createGraphicsPipeline() error {
 	}
 	h.pipelineLayout = pipelineLayout
 
+	depthStencil := vk.PipelineDepthStencilStateCreateInfo{
+		SType:                 vk.StructureTypePipelineDepthStencilStateCreateInfo,
+		DepthTestEnable:       vk.True,
+		DepthWriteEnable:      vk.True,
+		DepthCompareOp:        vk.CompareOpLess,
+		DepthBoundsTestEnable: vk.False,
+		MinDepthBounds:        0,
+		MaxDepthBounds:        1,
+		StencilTestEnable:     vk.False,
+	}
+
 	pipelineInfo := vk.GraphicsPipelineCreateInfo{
 		SType:               vk.StructureTypeGraphicsPipelineCreateInfo,
 		StageCount:          uint32(len(shaderStages)),
@@ -882,7 +974,7 @@ func (h *HelloTriangleApp) createGraphicsPipeline() error {
 		PViewportState:      &viewportState,
 		PRasterizationState: &rasterizer,
 		PMultisampleState:   &multisampling,
-		PDepthStencilState:  nil,
+		PDepthStencilState:  &depthStencil,
 		PColorBlendState:    &colorBlending,
 		PDynamicState:       &dynamicState,
 		Layout:              h.pipelineLayout,
@@ -917,12 +1009,13 @@ func (h *HelloTriangleApp) createFramebuffers() error {
 
 		attachments := []vk.ImageView{
 			swapChainView,
+			h.depthImageView,
 		}
 
 		frameBufferInfo := vk.FramebufferCreateInfo{
 			SType:           vk.StructureTypeFramebufferCreateInfo,
 			RenderPass:      h.renderPass,
-			AttachmentCount: 1,
+			AttachmentCount: uint32(len(attachments)),
 			PAttachments:    attachments,
 			Width:           h.swapChainExtend.Width,
 			Height:          h.swapChainExtend.Height,
@@ -1025,7 +1118,9 @@ func (h *HelloTriangleApp) createVertexBuffer() error {
 }
 
 func (h *HelloTriangleApp) createIndexBuffer() error {
-	bufferSize := vk.DeviceSize(uint32(len(h.indices)) * uint32(unsafe.Sizeof(h.indices[0])))
+	bufferSize := vk.DeviceSize(
+		uint32(len(h.indices)) * uint32(unsafe.Sizeof(h.indices[0])),
+	)
 
 	// Create the staging buffer
 	var (
@@ -1541,6 +1636,88 @@ func (h *HelloTriangleApp) findMemoryType(
 	return 0, fmt.Errorf("failed to find suitable memory type")
 }
 
+func (h *HelloTriangleApp) createDepthResources() error {
+	depthFormat, err := h.findDepthFormat()
+	if err != nil {
+		return fmt.Errorf("could not find suitable depth image format: %w", err)
+	}
+
+	var (
+		depthImage       vk.Image
+		depthImageMemory vk.DeviceMemory
+	)
+
+	err = h.createImage(
+		h.swapChainExtend.Width,
+		h.swapChainExtend.Height,
+		depthFormat,
+		vk.ImageTilingOptimal,
+		vk.ImageUsageFlags(vk.ImageUsageDepthStencilAttachmentBit),
+		vk.MemoryPropertyFlags(vk.MemoryPropertyDeviceLocalBit),
+		&depthImage,
+		&depthImageMemory,
+	)
+	if err != nil {
+		return fmt.Errorf("could not create depth image: %w", err)
+	}
+
+	h.depthImage = depthImage
+	h.depthImageMemory = depthImageMemory
+
+	depthImageView, err := h.createImageView(
+		depthImage,
+		depthFormat,
+		vk.ImageAspectFlags(vk.ImageAspectDepthBit),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create depth image view: %w", err)
+	}
+	h.depthImageView = depthImageView
+
+	return nil
+}
+
+func (h *HelloTriangleApp) findSupportedFormat(
+	candidates []vk.Format,
+	tiling vk.ImageTiling,
+	features vk.FormatFeatureFlags,
+) (vk.Format, error) {
+	for _, format := range candidates {
+		var props vk.FormatProperties
+		vk.GetPhysicalDeviceFormatProperties(h.physicalDevice, format, &props)
+		props.Deref()
+
+		if tiling == vk.ImageTilingLinear &&
+			(props.LinearTilingFeatures&features) == features {
+			return format, nil
+		}
+
+		if tiling == vk.ImageTilingOptimal &&
+			(props.OptimalTilingFeatures&features) == features {
+			return format, nil
+		}
+
+	}
+
+	return 0, fmt.Errorf("could not find suitable format")
+}
+
+func (h *HelloTriangleApp) findDepthFormat() (vk.Format, error) {
+	return h.findSupportedFormat(
+		[]vk.Format{
+			vk.FormatD32Sfloat,
+			vk.FormatD32SfloatS8Uint,
+			vk.FormatD24UnormS8Uint,
+		},
+		vk.ImageTilingOptimal,
+		vk.FormatFeatureFlags(vk.FormatFeatureDepthStencilAttachmentBit),
+	)
+}
+
+func (h *HelloTriangleApp) hasStencilComponent(format vk.Format) bool {
+	return format == vk.FormatD32SfloatS8Uint || format == vk.FormatD24UnormS8Uint
+}
+
 func (h *HelloTriangleApp) createTextureImage() error {
 	fh, err := textures.FS.Open("texture.jpg")
 	if err != nil {
@@ -1644,7 +1821,11 @@ func (h *HelloTriangleApp) createTextureImage() error {
 }
 
 func (h *HelloTriangleApp) createTextureImageView() error {
-	textureImageView, err := h.createImageView(h.textureImage, vk.FormatR8g8b8a8Srgb)
+	textureImageView, err := h.createImageView(
+		h.textureImage,
+		vk.FormatR8g8b8a8Srgb,
+		vk.ImageAspectFlags(vk.ImageAspectColorBit),
+	)
 	if err != nil {
 		return err
 	}
@@ -1656,6 +1837,7 @@ func (h *HelloTriangleApp) createTextureImageView() error {
 func (h *HelloTriangleApp) createImageView(
 	image vk.Image,
 	format vk.Format,
+	aspectFlags vk.ImageAspectFlags,
 ) (vk.ImageView, error) {
 	createInfo := vk.ImageViewCreateInfo{
 		SType:    vk.StructureTypeImageViewCreateInfo,
@@ -1669,7 +1851,7 @@ func (h *HelloTriangleApp) createImageView(
 			A: vk.ComponentSwizzleIdentity,
 		},
 		SubresourceRange: vk.ImageSubresourceRange{
-			AspectMask:     vk.ImageAspectFlags(vk.ImageAspectColorBit),
+			AspectMask:     aspectFlags,
 			BaseMipLevel:   0,
 			LevelCount:     1,
 			BaseArrayLayer: 0,
@@ -1752,7 +1934,10 @@ func (h *HelloTriangleApp) recordCommandBuffer(
 		return fmt.Errorf("cannot add begin command to the buffer: %w", err)
 	}
 
-	clearColor := vk.NewClearValue([]float32{0, 0, 0, 1})
+	var clearValues [2]vk.ClearValue
+
+	clearValues[0].SetColor([]float32{0, 0, 0, 1})
+	clearValues[1].SetDepthStencil(1, 0)
 
 	renderPassInfo := vk.RenderPassBeginInfo{
 		SType:       vk.StructureTypeRenderPassBeginInfo,
@@ -1765,8 +1950,8 @@ func (h *HelloTriangleApp) recordCommandBuffer(
 			},
 			Extent: h.swapChainExtend,
 		},
-		ClearValueCount: 1,
-		PClearValues:    []vk.ClearValue{clearColor},
+		ClearValueCount: uint32(len(clearValues)),
+		PClearValues:    clearValues[:],
 	}
 
 	vk.CmdBeginRenderPass(commandBuffer, &renderPassInfo, vk.SubpassContentsInline)
@@ -2292,7 +2477,7 @@ func (h *HelloTriangleApp) cleanup() error {
 }
 
 type Vertex struct {
-	pos      linmath.Vec2
+	pos      linmath.Vec3
 	color    linmath.Vec3
 	texColor linmath.Vec2
 }
@@ -2316,7 +2501,7 @@ func GetVertexAttributeDescriptions() [3]vk.VertexInputAttributeDescription {
 		{
 			Binding:  0,
 			Location: 0,
-			Format:   vk.FormatR32g32Sfloat,
+			Format:   vk.FormatR32g32b32Sfloat,
 			Offset:   uint32(unsafe.Offsetof(Vertex{}.pos)),
 		},
 		{

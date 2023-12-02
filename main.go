@@ -7,6 +7,7 @@ import (
 	"image"
 	"log"
 	"math"
+	"os"
 	"reflect"
 	"runtime"
 	"time"
@@ -15,13 +16,14 @@ import (
 	// Used for decoding textures
 	"image/draw"
 	_ "image/jpeg"
+	_ "image/png"
 
 	"vulkan-tutorial/queues"
 	"vulkan-tutorial/shaders"
-	"vulkan-tutorial/textures"
 	"vulkan-tutorial/unsafer"
 
 	"github.com/go-gl/glfw/v3.3/glfw"
+	"github.com/mokiat/go-data-front/decoder/obj"
 	vk "github.com/vulkan-go/vulkan"
 	"github.com/xlab/linmath"
 )
@@ -48,8 +50,11 @@ func main() {
 	flag.Parse()
 
 	app := &HelloTriangleApp{
-		width:                  1024,
-		height:                 768,
+		width:       1024,
+		height:      768,
+		modelPath:   "models/viking_room.obj",
+		texturePath: "textures/viking_room.png",
+
 		enableValidationLayers: args.debug,
 		startTime:              time.Now(),
 		validationLayers: []string{
@@ -58,57 +63,12 @@ func main() {
 		deviceExtensions: []string{
 			vk.KhrSwapchainExtensionName + "\x00",
 		},
-		physicalDevice: vk.PhysicalDevice(vk.NullHandle),
-		device:         vk.Device(vk.NullHandle),
-		surface:        vk.NullSurface,
-		swapChain:      vk.NullSwapchain,
-		vertices: []Vertex{
-			{
-				pos:      linmath.Vec3{-0.5, -0.5, 0},
-				color:    linmath.Vec3{1, 0, 0},
-				texColor: linmath.Vec2{1, 0},
-			},
-			{
-				pos:      linmath.Vec3{0.5, -0.5, 0},
-				color:    linmath.Vec3{0, 1, 0},
-				texColor: linmath.Vec2{0, 0},
-			},
-			{
-				pos:      linmath.Vec3{0.5, 0.5, 0},
-				color:    linmath.Vec3{0, 0, 1},
-				texColor: linmath.Vec2{0, 1},
-			},
-			{
-				pos:      linmath.Vec3{-0.5, 0.5, 0},
-				color:    linmath.Vec3{1, 1, 1},
-				texColor: linmath.Vec2{1, 1},
-			},
-
-			{
-				pos:      linmath.Vec3{-0.5, -0.5, -0.5},
-				color:    linmath.Vec3{1, 0, 0},
-				texColor: linmath.Vec2{1, 0},
-			},
-			{
-				pos:      linmath.Vec3{0.5, -0.5, -0.5},
-				color:    linmath.Vec3{0, 1, 0},
-				texColor: linmath.Vec2{0, 0},
-			},
-			{
-				pos:      linmath.Vec3{0.5, 0.5, -0.5},
-				color:    linmath.Vec3{0, 0, 1},
-				texColor: linmath.Vec2{0, 1},
-			},
-			{
-				pos:      linmath.Vec3{-0.5, 0.5, -0.5},
-				color:    linmath.Vec3{1, 1, 1},
-				texColor: linmath.Vec2{1, 1},
-			},
-		},
-		indices: []uint16{
-			0, 1, 2, 2, 3, 0,
-			4, 5, 6, 6, 7, 4,
-		},
+		physicalDevice:     vk.PhysicalDevice(vk.NullHandle),
+		device:             vk.Device(vk.NullHandle),
+		surface:            vk.NullSurface,
+		swapChain:          vk.NullSwapchain,
+		vertices:           []Vertex{},
+		indices:            []uint32{},
 		vertexBuffer:       vk.NullBuffer,
 		vertexBufferMemory: vk.NullDeviceMemory,
 		indexBuffer:        vk.NullBuffer,
@@ -130,6 +90,9 @@ func main() {
 type HelloTriangleApp struct {
 	width  int
 	height int
+
+	modelPath   string
+	texturePath string
 
 	// validationLayers is the list of required device extensions needed by this
 	// program when the -debug flag is set.
@@ -185,7 +148,7 @@ type HelloTriangleApp struct {
 	vertexBuffer       vk.Buffer
 	vertexBufferMemory vk.DeviceMemory
 
-	indices           []uint16
+	indices           []uint32
 	indexBuffer       vk.Buffer
 	indexBufferMemory vk.DeviceMemory
 
@@ -326,6 +289,10 @@ func (h *HelloTriangleApp) initVulkan() error {
 
 	if err := h.createTextureSampler(); err != nil {
 		return fmt.Errorf("createTextureSampler: %w", err)
+	}
+
+	if err := h.loadModel(); err != nil {
+		return fmt.Errorf("loadModel: %w", err)
 	}
 
 	if err := h.createVertexBuffer(); err != nil {
@@ -1054,6 +1021,63 @@ func (h *HelloTriangleApp) createCommandPool() error {
 	return nil
 }
 
+func (h *HelloTriangleApp) loadModel() error {
+	fh, err := os.Open(h.modelPath)
+	if err != nil {
+		return fmt.Errorf("cannot load model: %w", err)
+	}
+	defer fh.Close()
+
+	decoder := obj.NewDecoder(obj.DefaultLimits())
+	model, err := decoder.Decode(fh)
+	if err != nil {
+		return fmt.Errorf("failed to decode model: %w", err)
+	}
+
+	uniqueVertices := make(map[Vertex]uint32)
+
+	for _, shape := range model.Objects {
+		for _, mesh := range shape.Meshes {
+			for _, face := range mesh.Faces {
+				if len(face.References) != 3 {
+					return fmt.Errorf(
+						"face with %d references in shape %s",
+						len(face.References),
+						shape.Name,
+					)
+				}
+
+				for _, ref := range face.References {
+					vertex := Vertex{
+						pos: linmath.Vec3{
+							float32(model.Vertices[ref.VertexIndex].X),
+							float32(model.Vertices[ref.VertexIndex].Y),
+							float32(model.Vertices[ref.VertexIndex].Z),
+						},
+						texColor: linmath.Vec2{
+							float32(model.TexCoords[ref.TexCoordIndex].U),
+							1 - float32(model.TexCoords[ref.TexCoordIndex].V),
+						},
+						color: linmath.Vec3{1, 1, 1},
+					}
+
+					vertexIndex, ok := uniqueVertices[vertex]
+					if !ok {
+						vertexIndex = uint32(len(h.vertices))
+						uniqueVertices[vertex] = vertexIndex
+						h.vertices = append(h.vertices, vertex)
+					}
+
+					h.indices = append(h.indices, vertexIndex)
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
 func (h *HelloTriangleApp) createVertexBuffer() error {
 	bufferSize := vk.DeviceSize(uint32(len(h.vertices)) * GetVertexSize())
 
@@ -1719,7 +1743,7 @@ func (h *HelloTriangleApp) hasStencilComponent(format vk.Format) bool {
 }
 
 func (h *HelloTriangleApp) createTextureImage() error {
-	fh, err := textures.FS.Open("texture.jpg")
+	fh, err := os.Open(h.texturePath)
 	if err != nil {
 		return fmt.Errorf("failed to open texture file: %w", err)
 	}
@@ -1961,7 +1985,7 @@ func (h *HelloTriangleApp) recordCommandBuffer(
 	offsets := []vk.DeviceSize{0}
 	vk.CmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets)
 
-	vk.CmdBindIndexBuffer(commandBuffer, h.indexBuffer, 0, vk.IndexTypeUint16)
+	vk.CmdBindIndexBuffer(commandBuffer, h.indexBuffer, 0, vk.IndexTypeUint32)
 
 	viewport := vk.Viewport{
 		X: 0, Y: 0,

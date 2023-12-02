@@ -80,6 +80,12 @@ func main() {
 		textureSampler:     vk.NullSampler,
 
 		descriptorSetLayout: vk.NullDescriptorSetLayout,
+
+		msaaSamples: vk.SampleCount1Bit,
+
+		colorImage:       vk.NullImage,
+		colorImageView:   vk.NullImageView,
+		colorImageMemory: vk.NullDeviceMemory,
 	}
 	if err := app.Run(); err != nil {
 		log.Fatalf("ERROR: %s", err)
@@ -168,6 +174,12 @@ type VulkanTutorialApp struct {
 	depthImage       vk.Image
 	depthImageMemory vk.DeviceMemory
 	depthImageView   vk.ImageView
+
+	msaaSamples vk.SampleCountFlagBits
+
+	colorImage       vk.Image
+	colorImageMemory vk.DeviceMemory
+	colorImageView   vk.ImageView
 }
 
 // Run runs the vulkan program.
@@ -270,6 +282,10 @@ func (a *VulkanTutorialApp) initVulkan() error {
 
 	if err := a.createCommandPool(); err != nil {
 		return fmt.Errorf("createCommandPool: %w", err)
+	}
+
+	if err := a.createColorResources(); err != nil {
+		return fmt.Errorf("createColorResources: %w", err)
 	}
 
 	if err := a.createDepthResources(); err != nil {
@@ -397,6 +413,18 @@ func (a *VulkanTutorialApp) cleanupVulkan() {
 }
 
 func (a *VulkanTutorialApp) cleanupSwapChain() {
+	if a.colorImageView != vk.NullImageView {
+		vk.DestroyImageView(a.device, a.colorImageView, nil)
+	}
+
+	if a.colorImage != vk.NullImage {
+		vk.DestroyImage(a.device, a.colorImage, nil)
+	}
+
+	if a.colorImageMemory != vk.NullDeviceMemory {
+		vk.FreeMemory(a.device, a.colorImageMemory, nil)
+	}
+
 	if a.depthImageView != vk.NullImageView {
 		vk.DestroyImageView(a.device, a.depthImageView, nil)
 	}
@@ -469,6 +497,12 @@ func (a *VulkanTutorialApp) pickPhysicalDevice() error {
 	}
 
 	a.physicalDevice = selectedDevice
+	a.msaaSamples = a.getMaxUsableSampleCount()
+
+	if args.debug {
+		log.Printf("MSAA samples used: %d\n", a.msaaSamples)
+	}
+
 	return nil
 }
 
@@ -616,6 +650,9 @@ func (a *VulkanTutorialApp) recreateSwapChain() error {
 	if err := a.createImageViews(); err != nil {
 		return fmt.Errorf("createImageViews: %w", err)
 	}
+	if err := a.createColorResources(); err != nil {
+		return fmt.Errorf("createColorResources: %w", err)
+	}
 	if err := a.createDepthResources(); err != nil {
 		return fmt.Errorf("createDepthResources: %w", err)
 	}
@@ -651,9 +688,25 @@ func (a *VulkanTutorialApp) createRenderPass() error {
 		return fmt.Errorf("cannot find suitable depth image format: %w", err)
 	}
 
+	colorAttachment := vk.AttachmentDescription{
+		Format:         a.swapChainImageFormat,
+		Samples:        a.msaaSamples,
+		LoadOp:         vk.AttachmentLoadOpClear,
+		StoreOp:        vk.AttachmentStoreOpStore,
+		StencilLoadOp:  vk.AttachmentLoadOpDontCare,
+		StencilStoreOp: vk.AttachmentStoreOpDontCare,
+		InitialLayout:  vk.ImageLayoutUndefined,
+		FinalLayout:    vk.ImageLayoutColorAttachmentOptimal,
+	}
+
+	colorAttachmentRef := vk.AttachmentReference{
+		Attachment: 0,
+		Layout:     vk.ImageLayoutColorAttachmentOptimal,
+	}
+
 	depthAttachment := vk.AttachmentDescription{
 		Format:         depthFormat,
-		Samples:        vk.SampleCount1Bit,
+		Samples:        a.msaaSamples,
 		LoadOp:         vk.AttachmentLoadOpClear,
 		StoreOp:        vk.AttachmentStoreOpDontCare,
 		StencilLoadOp:  vk.AttachmentLoadOpDontCare,
@@ -667,10 +720,10 @@ func (a *VulkanTutorialApp) createRenderPass() error {
 		Layout:     vk.ImageLayoutDepthStencilAttachmentOptimal,
 	}
 
-	colorAttachment := vk.AttachmentDescription{
+	colorAttachmentResolve := vk.AttachmentDescription{
 		Format:         a.swapChainImageFormat,
 		Samples:        vk.SampleCount1Bit,
-		LoadOp:         vk.AttachmentLoadOpClear,
+		LoadOp:         vk.AttachmentLoadOpDontCare,
 		StoreOp:        vk.AttachmentStoreOpStore,
 		StencilLoadOp:  vk.AttachmentLoadOpDontCare,
 		StencilStoreOp: vk.AttachmentStoreOpDontCare,
@@ -678,8 +731,8 @@ func (a *VulkanTutorialApp) createRenderPass() error {
 		FinalLayout:    vk.ImageLayoutPresentSrc,
 	}
 
-	colorAttachmentRef := vk.AttachmentReference{
-		Attachment: 0,
+	colorAttachmentResolveRef := vk.AttachmentReference{
+		Attachment: 2,
 		Layout:     vk.ImageLayoutColorAttachmentOptimal,
 	}
 
@@ -688,6 +741,7 @@ func (a *VulkanTutorialApp) createRenderPass() error {
 		ColorAttachmentCount:    1,
 		PColorAttachments:       []vk.AttachmentReference{colorAttachmentRef},
 		PDepthStencilAttachment: &depthAttachmentRef,
+		PResolveAttachments:     []vk.AttachmentReference{colorAttachmentResolveRef},
 	}
 
 	dependency := vk.SubpassDependency{
@@ -705,6 +759,7 @@ func (a *VulkanTutorialApp) createRenderPass() error {
 	attachments := []vk.AttachmentDescription{
 		colorAttachment,
 		depthAttachment,
+		colorAttachmentResolve,
 	}
 
 	rederPassInfo := vk.RenderPassCreateInfo{
@@ -725,6 +780,42 @@ func (a *VulkanTutorialApp) createRenderPass() error {
 	a.renderPass = renderPass
 
 	return nil
+}
+
+func (a *VulkanTutorialApp) getMaxUsableSampleCount() vk.SampleCountFlagBits {
+	var deviceProps vk.PhysicalDeviceProperties
+	vk.GetPhysicalDeviceProperties(a.physicalDevice, &deviceProps)
+	deviceProps.Deref()
+	deviceProps.Limits.Deref()
+
+	counts := vk.SampleCountFlags(deviceProps.Limits.FramebufferColorSampleCounts) &
+		vk.SampleCountFlags(deviceProps.Limits.FramebufferDepthSampleCounts)
+
+	if counts&vk.SampleCountFlags(vk.SampleCount64Bit) != 0 {
+		return vk.SampleCount64Bit
+	}
+
+	if counts&vk.SampleCountFlags(vk.SampleCount32Bit) != 0 {
+		return vk.SampleCount32Bit
+	}
+
+	if counts&vk.SampleCountFlags(vk.SampleCount16Bit) != 0 {
+		return vk.SampleCount16Bit
+	}
+
+	if counts&vk.SampleCountFlags(vk.SampleCount8Bit) != 0 {
+		return vk.SampleCount8Bit
+	}
+
+	if counts&vk.SampleCountFlags(vk.SampleCount4Bit) != 0 {
+		return vk.SampleCount4Bit
+	}
+
+	if counts&vk.SampleCountFlags(vk.SampleCount2Bit) != 0 {
+		return vk.SampleCount2Bit
+	}
+
+	return vk.SampleCount1Bit
 }
 
 func (a *VulkanTutorialApp) createDescriptorSetLayout() error {
@@ -878,7 +969,7 @@ func (a *VulkanTutorialApp) createGraphicsPipeline() error {
 	multisampling := vk.PipelineMultisampleStateCreateInfo{
 		SType:                 vk.StructureTypePipelineMultisampleStateCreateInfo,
 		SampleShadingEnable:   vk.False,
-		RasterizationSamples:  vk.SampleCount1Bit,
+		RasterizationSamples:  a.msaaSamples,
 		MinSampleShading:      1,
 		AlphaToCoverageEnable: vk.False,
 		AlphaToOneEnable:      vk.False,
@@ -977,8 +1068,9 @@ func (a *VulkanTutorialApp) createFramebuffers() error {
 		swapChainView := swapChainView
 
 		attachments := []vk.ImageView{
-			swapChainView,
+			a.colorImageView,
 			a.depthImageView,
+			swapChainView,
 		}
 
 		frameBufferInfo := vk.FramebufferCreateInfo{
@@ -1580,6 +1672,7 @@ func (a *VulkanTutorialApp) createImage(
 	width uint32,
 	height uint32,
 	mipLevels uint32,
+	numSamples vk.SampleCountFlagBits,
 	format vk.Format,
 	tiling vk.ImageTiling,
 	usage vk.ImageUsageFlags,
@@ -1602,7 +1695,7 @@ func (a *VulkanTutorialApp) createImage(
 		InitialLayout: vk.ImageLayoutUndefined,
 		Usage:         usage,
 		SharingMode:   vk.SharingModeExclusive,
-		Samples:       vk.SampleCount1Bit,
+		Samples:       numSamples,
 	}
 
 	res := vk.CreateImage(a.device, &imageInfo, nil, image)
@@ -1664,6 +1757,46 @@ func (a *VulkanTutorialApp) findMemoryType(
 	return 0, fmt.Errorf("failed to find suitable memory type")
 }
 
+func (a *VulkanTutorialApp) createColorResources() error {
+	colorFormat := a.swapChainImageFormat
+
+	var (
+		colorImage       vk.Image
+		colorImageMemory vk.DeviceMemory
+	)
+	err := a.createImage(
+		a.swapChainExtend.Width,
+		a.swapChainExtend.Height,
+		1,
+		a.msaaSamples,
+		colorFormat,
+		vk.ImageTilingOptimal,
+		vk.ImageUsageFlags(vk.ImageUsageTransientAttachmentBit)|
+			vk.ImageUsageFlags(vk.ImageUsageColorAttachmentBit),
+		vk.MemoryPropertyFlags(vk.MemoryPropertyDeviceLocalBit),
+		&colorImage,
+		&colorImageMemory,
+	)
+	if err != nil {
+		return fmt.Errorf("cannot create image: %w", err)
+	}
+	a.colorImage = colorImage
+	a.colorImageMemory = colorImageMemory
+
+	colorImageView, err := a.createImageView(
+		a.colorImage,
+		colorFormat,
+		vk.ImageAspectFlags(vk.ImageAspectColorBit),
+		1,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create image view: %w", err)
+	}
+	a.colorImageView = colorImageView
+
+	return nil
+}
+
 func (a *VulkanTutorialApp) createDepthResources() error {
 	depthFormat, err := a.findDepthFormat()
 	if err != nil {
@@ -1679,6 +1812,7 @@ func (a *VulkanTutorialApp) createDepthResources() error {
 		a.swapChainExtend.Width,
 		a.swapChainExtend.Height,
 		1,
+		a.msaaSamples,
 		depthFormat,
 		vk.ImageTilingOptimal,
 		vk.ImageUsageFlags(vk.ImageUsageDepthStencilAttachmentBit),
@@ -1812,6 +1946,7 @@ func (a *VulkanTutorialApp) createTextureImage() error {
 		texWidth,
 		texHeight,
 		a.mipLevels,
+		vk.SampleCount1Bit,
 		vk.FormatR8g8b8a8Srgb,
 		vk.ImageTilingOptimal,
 		vk.ImageUsageFlags(vk.ImageUsageTransferDstBit)|

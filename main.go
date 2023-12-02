@@ -4,17 +4,16 @@ import (
 	"cmp"
 	"flag"
 	"fmt"
-	"image"
 	"log"
 	"math"
-	"os"
+	"math/rand"
 	"reflect"
 	"runtime"
 	"time"
 	"unsafe"
 
 	// Used for decoding textures
-	"image/draw"
+
 	_ "image/jpeg"
 	_ "image/png"
 
@@ -23,7 +22,6 @@ import (
 	"vulkan-tutorial/unsafer"
 
 	"github.com/go-gl/glfw/v3.3/glfw"
-	"github.com/mokiat/go-data-front/decoder/obj"
 	vk "github.com/vulkan-go/vulkan"
 	"github.com/xlab/linmath"
 )
@@ -44,63 +42,43 @@ var args struct {
 }
 
 const (
-	title             = "Vulkan Tutorial: Viking Room"
+	title             = "Vulkan Tutorial: Compute"
 	maxFramesInFlight = 2
+	particleCount     = 8192
 )
 
 func main() {
 	flag.Parse()
 
-	app := &VulkanTutorialApp{
-		width:       1024,
-		height:      768,
-		modelPath:   "models/viking_room.obj",
-		texturePath: "textures/viking_room.png",
+	app := &VulkanComputeApp{
+		width:  1024,
+		height: 768,
 
 		enableValidationLayers: args.debug,
-		startTime:              time.Now(),
+		lastFrameTime:          time.Now(),
 		validationLayers: []string{
 			"VK_LAYER_KHRONOS_validation\x00",
 		},
 		deviceExtensions: []string{
 			vk.KhrSwapchainExtensionName + "\x00",
 		},
-		physicalDevice:     vk.PhysicalDevice(vk.NullHandle),
-		device:             vk.Device(vk.NullHandle),
-		surface:            vk.NullSurface,
-		swapChain:          vk.NullSwapchain,
-		vertices:           []Vertex{},
-		indices:            []uint32{},
-		vertexBuffer:       vk.NullBuffer,
-		vertexBufferMemory: vk.NullDeviceMemory,
-		indexBuffer:        vk.NullBuffer,
-		indexBufferMemory:  vk.NullDeviceMemory,
-		descriptorPool:     vk.NullDescriptorPool,
+		physicalDevice: vk.PhysicalDevice(vk.NullHandle),
+		device:         vk.Device(vk.NullHandle),
+		surface:        vk.NullSurface,
+		swapChain:      vk.NullSwapchain,
+		descriptorPool: vk.NullDescriptorPool,
 
-		textureImage:       vk.NullImage,
-		textureImageMemory: vk.NullDeviceMemory,
-		textureSampler:     vk.NullSampler,
-
-		descriptorSetLayout: vk.NullDescriptorSetLayout,
-
-		msaaSamples: vk.SampleCount1Bit,
-
-		colorImage:       vk.NullImage,
-		colorImageView:   vk.NullImageView,
-		colorImageMemory: vk.NullDeviceMemory,
+		computeDescriptorSetLayout: vk.NullDescriptorSetLayout,
 	}
 	if err := app.Run(); err != nil {
 		log.Fatalf("ERROR: %s", err)
 	}
 }
 
-// VulkanTutorialApp is the first program from vulkan-tutorial.com
-type VulkanTutorialApp struct {
+// VulkanComputeApp is the first program from vulkan-tutorial.com
+type VulkanComputeApp struct {
 	width  int
 	height int
-
-	modelPath   string
-	texturePath string
 
 	// validationLayers is the list of required device extensions needed by this
 	// program when the -debug flag is set.
@@ -120,10 +98,11 @@ type VulkanTutorialApp struct {
 	// device is the logical device created for interfacing with the physical device.
 	device vk.Device
 
-	startTime time.Time
+	lastFrameTime time.Time
 
 	graphicsQueue vk.Queue
 	presentQueue  vk.Queue
+	computeQueue  vk.Queue
 
 	surface vk.Surface
 
@@ -135,57 +114,42 @@ type VulkanTutorialApp struct {
 
 	swapChainFramebuffers []vk.Framebuffer
 
-	renderPass          vk.RenderPass
-	descriptorSetLayout vk.DescriptorSetLayout
-	pipelineLayout      vk.PipelineLayout
-
+	renderPass      vk.RenderPass
+	pipelineLayout  vk.PipelineLayout
 	graphicsPipline vk.Pipeline
 
-	commandPool    vk.CommandPool
-	commandBuffers []vk.CommandBuffer
+	computeDescriptorSetLayout vk.DescriptorSetLayout
+	computePipelineLayout      vk.PipelineLayout
+	computePipeline            vk.Pipeline
+
+	commandPool           vk.CommandPool
+	commandBuffers        []vk.CommandBuffer
+	computeCommandBuffers []vk.CommandBuffer
 
 	imageAvailabmeSems []vk.Semaphore
 	renderFinishedSems []vk.Semaphore
 	inFlightFences     []vk.Fence
 
+	computeInFlightFences []vk.Fence
+	computeFinishedSems   []vk.Semaphore
+
 	frameBufferResized bool
 
-	curentFrame uint32
-
-	vertices           []Vertex
-	vertexBuffer       vk.Buffer
-	vertexBufferMemory vk.DeviceMemory
-
-	indices           []uint32
-	indexBuffer       vk.Buffer
-	indexBufferMemory vk.DeviceMemory
+	currentFrame uint32
 
 	uniformBuffers       []vk.Buffer
 	uniformBuffersMemory []vk.DeviceMemory
 	uniformBuffersMapped []unsafe.Pointer
 
-	descriptorPool vk.DescriptorPool
-	descriptorSets []vk.DescriptorSet
+	descriptorPool        vk.DescriptorPool
+	computeDescriptorSets []vk.DescriptorSet
 
-	mipLevels          uint32
-	textureImage       vk.Image
-	textureImageMemory vk.DeviceMemory
-	textureImageView   vk.ImageView
-	textureSampler     vk.Sampler
-
-	depthImage       vk.Image
-	depthImageMemory vk.DeviceMemory
-	depthImageView   vk.ImageView
-
-	msaaSamples vk.SampleCountFlagBits
-
-	colorImage       vk.Image
-	colorImageMemory vk.DeviceMemory
-	colorImageView   vk.ImageView
+	shaderStorageBuffers       []vk.Buffer
+	shaderStorageBuffersMemory []vk.DeviceMemory
 }
 
 // Run runs the vulkan program.
-func (a *VulkanTutorialApp) Run() error {
+func (a *VulkanComputeApp) Run() error {
 	if err := a.initWindow(); err != nil {
 		return fmt.Errorf("initWindow: %w", err)
 	}
@@ -207,7 +171,7 @@ func (a *VulkanTutorialApp) Run() error {
 	return nil
 }
 
-func (a *VulkanTutorialApp) initWindow() error {
+func (a *VulkanComputeApp) initWindow() error {
 	if err := glfw.Init(); err != nil {
 		return fmt.Errorf("glfw.Init: %w", err)
 	}
@@ -226,7 +190,7 @@ func (a *VulkanTutorialApp) initWindow() error {
 	return nil
 }
 
-func (a *VulkanTutorialApp) frameBufferResizeCallback(
+func (a *VulkanComputeApp) frameBufferResizeCallback(
 	w *glfw.Window,
 	width int,
 	height int,
@@ -234,12 +198,12 @@ func (a *VulkanTutorialApp) frameBufferResizeCallback(
 	a.frameBufferResized = true
 }
 
-func (a *VulkanTutorialApp) cleanWindow() {
+func (a *VulkanComputeApp) cleanWindow() {
 	a.window.Destroy()
 	glfw.Terminate()
 }
 
-func (a *VulkanTutorialApp) initVulkan() error {
+func (a *VulkanComputeApp) initVulkan() error {
 	vk.SetGetInstanceProcAddr(glfw.GetVulkanGetInstanceProcAddress())
 
 	if err := vk.Init(); err != nil {
@@ -274,7 +238,7 @@ func (a *VulkanTutorialApp) initVulkan() error {
 		return fmt.Errorf("createRenderPass: %w", err)
 	}
 
-	if err := a.createDescriptorSetLayout(); err != nil {
+	if err := a.createComputeDescriptorSetLayout(); err != nil {
 		return fmt.Errorf("createDescriptorSetLayout: %w", err)
 	}
 
@@ -282,44 +246,20 @@ func (a *VulkanTutorialApp) initVulkan() error {
 		return fmt.Errorf("createGraphicsPipeline: %w", err)
 	}
 
+	if err := a.createComputePipeline(); err != nil {
+		return fmt.Errorf("createComputePipeline: %w", err)
+	}
+
 	if err := a.createCommandPool(); err != nil {
 		return fmt.Errorf("createCommandPool: %w", err)
 	}
 
-	if err := a.createColorResources(); err != nil {
-		return fmt.Errorf("createColorResources: %w", err)
-	}
-
-	if err := a.createDepthResources(); err != nil {
-		return fmt.Errorf("createDepthResources: %w", err)
+	if err := a.createShaderStorageBuffers(); err != nil {
+		return fmt.Errorf("createShaderStorageBuffers: %w", err)
 	}
 
 	if err := a.createFramebuffers(); err != nil {
 		return fmt.Errorf("createFramebuffers: %w", err)
-	}
-
-	if err := a.createTextureImage(); err != nil {
-		return fmt.Errorf("createTextureImage: %w", err)
-	}
-
-	if err := a.createTextureImageView(); err != nil {
-		return fmt.Errorf("createTextureImageView: %w", err)
-	}
-
-	if err := a.createTextureSampler(); err != nil {
-		return fmt.Errorf("createTextureSampler: %w", err)
-	}
-
-	if err := a.loadModel(); err != nil {
-		return fmt.Errorf("loadModel: %w", err)
-	}
-
-	if err := a.createVertexBuffer(); err != nil {
-		return fmt.Errorf("createVertexBuffer: %w", err)
-	}
-
-	if err := a.createIndexBuffer(); err != nil {
-		return fmt.Errorf("createIndexBuffer: %w", err)
 	}
 
 	if err := a.createUniformBuffers(); err != nil {
@@ -330,12 +270,16 @@ func (a *VulkanTutorialApp) initVulkan() error {
 		return fmt.Errorf("createDescriptorPool: %w", err)
 	}
 
-	if err := a.createDescriptorSets(); err != nil {
+	if err := a.createComputeDescriptorSets(); err != nil {
 		return fmt.Errorf("createDescriptorSets: %w", err)
 	}
 
 	if err := a.createCommandBuffer(); err != nil {
 		return fmt.Errorf("createCommandBuffer: %w", err)
+	}
+
+	if err := a.createComputeCommandBuffers(); err != nil {
+		return fmt.Errorf("createComputeCommandBuffers: %w", err)
 	}
 
 	if err := a.createSyncObjects(); err != nil {
@@ -345,11 +289,14 @@ func (a *VulkanTutorialApp) initVulkan() error {
 	return nil
 }
 
-func (a *VulkanTutorialApp) cleanupVulkan() {
+func (a *VulkanComputeApp) cleanupVulkan() {
 	for i := 0; i < maxFramesInFlight; i++ {
 		vk.DestroySemaphore(a.device, a.imageAvailabmeSems[i], nil)
 		vk.DestroySemaphore(a.device, a.renderFinishedSems[i], nil)
 		vk.DestroyFence(a.device, a.inFlightFences[i], nil)
+
+		vk.DestroySemaphore(a.device, a.computeFinishedSems[i], nil)
+		vk.DestroyFence(a.device, a.computeInFlightFences[i], nil)
 	}
 
 	vk.DestroyCommandPool(a.device, a.commandPool, nil)
@@ -357,22 +304,10 @@ func (a *VulkanTutorialApp) cleanupVulkan() {
 	vk.DestroyPipeline(a.device, a.graphicsPipline, nil)
 	vk.DestroyPipelineLayout(a.device, a.pipelineLayout, nil)
 
+	vk.DestroyPipeline(a.device, a.computePipeline, nil)
+	vk.DestroyPipelineLayout(a.device, a.computePipelineLayout, nil)
+
 	a.cleanupSwapChain()
-
-	if a.textureSampler != vk.NullSampler {
-		vk.DestroySampler(a.device, a.textureSampler, nil)
-	}
-
-	if a.textureImageView != vk.NullImageView {
-		vk.DestroyImageView(a.device, a.textureImageView, nil)
-	}
-
-	if a.textureImage != vk.NullImage {
-		vk.DestroyImage(a.device, a.textureImage, nil)
-	}
-	if a.textureImageMemory != vk.NullDeviceMemory {
-		vk.FreeMemory(a.device, a.textureImageMemory, nil)
-	}
 
 	for _, buffer := range a.uniformBuffers {
 		vk.DestroyBuffer(a.device, buffer, nil)
@@ -380,27 +315,19 @@ func (a *VulkanTutorialApp) cleanupVulkan() {
 	for _, bufferMem := range a.uniformBuffersMemory {
 		vk.FreeMemory(a.device, bufferMem, nil)
 	}
+	for _, buffer := range a.shaderStorageBuffers {
+		vk.DestroyBuffer(a.device, buffer, nil)
+	}
+	for _, bufferMem := range a.shaderStorageBuffersMemory {
+		vk.FreeMemory(a.device, bufferMem, nil)
+	}
 
 	if a.descriptorPool != vk.NullDescriptorPool {
 		vk.DestroyDescriptorPool(a.device, a.descriptorPool, nil)
 	}
 
-	if a.descriptorSetLayout != vk.NullDescriptorSetLayout {
-		vk.DestroyDescriptorSetLayout(a.device, a.descriptorSetLayout, nil)
-	}
-
-	if a.vertexBuffer != vk.NullBuffer {
-		vk.DestroyBuffer(a.device, a.vertexBuffer, nil)
-	}
-	if a.vertexBufferMemory != vk.NullDeviceMemory {
-		vk.FreeMemory(a.device, a.vertexBufferMemory, nil)
-	}
-
-	if a.indexBuffer != vk.NullBuffer {
-		vk.DestroyBuffer(a.device, a.indexBuffer, nil)
-	}
-	if a.indexBufferMemory != vk.NullDeviceMemory {
-		vk.FreeMemory(a.device, a.indexBufferMemory, nil)
+	if a.computeDescriptorSetLayout != vk.NullDescriptorSetLayout {
+		vk.DestroyDescriptorSetLayout(a.device, a.computeDescriptorSetLayout, nil)
 	}
 
 	vk.DestroyRenderPass(a.device, a.renderPass, nil)
@@ -414,31 +341,7 @@ func (a *VulkanTutorialApp) cleanupVulkan() {
 	vk.DestroyInstance(a.instance, nil)
 }
 
-func (a *VulkanTutorialApp) cleanupSwapChain() {
-	if a.colorImageView != vk.NullImageView {
-		vk.DestroyImageView(a.device, a.colorImageView, nil)
-	}
-
-	if a.colorImage != vk.NullImage {
-		vk.DestroyImage(a.device, a.colorImage, nil)
-	}
-
-	if a.colorImageMemory != vk.NullDeviceMemory {
-		vk.FreeMemory(a.device, a.colorImageMemory, nil)
-	}
-
-	if a.depthImageView != vk.NullImageView {
-		vk.DestroyImageView(a.device, a.depthImageView, nil)
-	}
-
-	if a.depthImage != vk.NullImage {
-		vk.DestroyImage(a.device, a.depthImage, nil)
-	}
-
-	if a.depthImageMemory != vk.NullDeviceMemory {
-		vk.FreeMemory(a.device, a.depthImageMemory, nil)
-	}
-
+func (a *VulkanComputeApp) cleanupSwapChain() {
 	for _, frameBuffer := range a.swapChainFramebuffers {
 		vk.DestroyFramebuffer(a.device, frameBuffer, nil)
 	}
@@ -454,7 +357,7 @@ func (a *VulkanTutorialApp) cleanupSwapChain() {
 	a.swapChainImageViews = nil
 }
 
-func (a *VulkanTutorialApp) createSurface() error {
+func (a *VulkanComputeApp) createSurface() error {
 	surfacePtr, err := a.window.CreateWindowSurface(a.instance, nil)
 	if err != nil {
 		return fmt.Errorf("cannot create surface within GLFW window: %w", err)
@@ -464,7 +367,7 @@ func (a *VulkanTutorialApp) createSurface() error {
 	return nil
 }
 
-func (a *VulkanTutorialApp) pickPhysicalDevice() error {
+func (a *VulkanComputeApp) pickPhysicalDevice() error {
 	var deviceCount uint32
 	err := vk.Error(vk.EnumeratePhysicalDevices(a.instance, &deviceCount, nil))
 	if err != nil {
@@ -499,16 +402,11 @@ func (a *VulkanTutorialApp) pickPhysicalDevice() error {
 	}
 
 	a.physicalDevice = selectedDevice
-	a.msaaSamples = a.getMaxUsableSampleCount()
-
-	if args.debug {
-		log.Printf("MSAA samples used: %d\n", a.msaaSamples)
-	}
 
 	return nil
 }
 
-func (a *VulkanTutorialApp) createLogicalDevice() error {
+func (a *VulkanComputeApp) createLogicalDevice() error {
 	indices := a.findQueueFamilies(a.physicalDevice)
 	if !indices.IsComplete() {
 		return fmt.Errorf("createLogicalDevice called for physical device which does " +
@@ -516,7 +414,7 @@ func (a *VulkanTutorialApp) createLogicalDevice() error {
 	}
 
 	queueFamilies := make(map[uint32]struct{})
-	queueFamilies[indices.Graphics.Get()] = struct{}{}
+	queueFamilies[indices.GraphicsAndCompute.Get()] = struct{}{}
 	queueFamilies[indices.Present.Get()] = struct{}{}
 
 	queueCreateInfos := []vk.DeviceQueueCreateInfo{}
@@ -561,8 +459,12 @@ func (a *VulkanTutorialApp) createLogicalDevice() error {
 	a.device = device
 
 	var graphicsQueue vk.Queue
-	vk.GetDeviceQueue(a.device, indices.Graphics.Get(), 0, &graphicsQueue)
+	vk.GetDeviceQueue(a.device, indices.GraphicsAndCompute.Get(), 0, &graphicsQueue)
 	a.graphicsQueue = graphicsQueue
+
+	var computeQueue vk.Queue
+	vk.GetDeviceQueue(a.device, indices.GraphicsAndCompute.Get(), 0, &computeQueue)
+	a.computeQueue = computeQueue
 
 	var presentQueue vk.Queue
 	vk.GetDeviceQueue(a.device, indices.Present.Get(), 0, &presentQueue)
@@ -571,7 +473,7 @@ func (a *VulkanTutorialApp) createLogicalDevice() error {
 	return nil
 }
 
-func (a *VulkanTutorialApp) createSwapChain() error {
+func (a *VulkanComputeApp) createSwapChain() error {
 	swapChainSupport := a.querySwapChainSupport(a.physicalDevice)
 
 	surfaceFormat := a.chooseSwapSurfaceFormat(swapChainSupport.formats)
@@ -600,11 +502,11 @@ func (a *VulkanTutorialApp) createSwapChain() error {
 	}
 
 	indices := a.findQueueFamilies(a.physicalDevice)
-	if indices.Graphics.Get() != indices.Present.Get() {
+	if indices.GraphicsAndCompute.Get() != indices.Present.Get() {
 		createInfo.ImageSharingMode = vk.SharingModeConcurrent
 		createInfo.QueueFamilyIndexCount = 2
 		createInfo.PQueueFamilyIndices = []uint32{
-			indices.Graphics.Get(),
+			indices.GraphicsAndCompute.Get(),
 			indices.Present.Get(),
 		}
 	} else {
@@ -632,7 +534,7 @@ func (a *VulkanTutorialApp) createSwapChain() error {
 	return nil
 }
 
-func (a *VulkanTutorialApp) recreateSwapChain() error {
+func (a *VulkanComputeApp) recreateSwapChain() error {
 	for true {
 		width, height := a.window.GetFramebufferSize()
 		if width != 0 || height != 0 {
@@ -652,12 +554,6 @@ func (a *VulkanTutorialApp) recreateSwapChain() error {
 	if err := a.createImageViews(); err != nil {
 		return fmt.Errorf("createImageViews: %w", err)
 	}
-	if err := a.createColorResources(); err != nil {
-		return fmt.Errorf("createColorResources: %w", err)
-	}
-	if err := a.createDepthResources(); err != nil {
-		return fmt.Errorf("createDepthResources: %w", err)
-	}
 	if err := a.createFramebuffers(); err != nil {
 		return fmt.Errorf("createFramebuffers: %w", err)
 	}
@@ -665,7 +561,7 @@ func (a *VulkanTutorialApp) recreateSwapChain() error {
 	return nil
 }
 
-func (a *VulkanTutorialApp) createImageViews() error {
+func (a *VulkanComputeApp) createImageViews() error {
 	for i, swapChainImage := range a.swapChainImages {
 		swapChainImage := swapChainImage
 		imageView, err := a.createImageView(
@@ -684,48 +580,11 @@ func (a *VulkanTutorialApp) createImageViews() error {
 	return nil
 }
 
-func (a *VulkanTutorialApp) createRenderPass() error {
-	depthFormat, err := a.findDepthFormat()
-	if err != nil {
-		return fmt.Errorf("cannot find suitable depth image format: %w", err)
-	}
-
+func (a *VulkanComputeApp) createRenderPass() error {
 	colorAttachment := vk.AttachmentDescription{
 		Format:         a.swapChainImageFormat,
-		Samples:        a.msaaSamples,
-		LoadOp:         vk.AttachmentLoadOpClear,
-		StoreOp:        vk.AttachmentStoreOpStore,
-		StencilLoadOp:  vk.AttachmentLoadOpDontCare,
-		StencilStoreOp: vk.AttachmentStoreOpDontCare,
-		InitialLayout:  vk.ImageLayoutUndefined,
-		FinalLayout:    vk.ImageLayoutColorAttachmentOptimal,
-	}
-
-	colorAttachmentRef := vk.AttachmentReference{
-		Attachment: 0,
-		Layout:     vk.ImageLayoutColorAttachmentOptimal,
-	}
-
-	depthAttachment := vk.AttachmentDescription{
-		Format:         depthFormat,
-		Samples:        a.msaaSamples,
-		LoadOp:         vk.AttachmentLoadOpClear,
-		StoreOp:        vk.AttachmentStoreOpDontCare,
-		StencilLoadOp:  vk.AttachmentLoadOpDontCare,
-		StencilStoreOp: vk.AttachmentStoreOpDontCare,
-		InitialLayout:  vk.ImageLayoutUndefined,
-		FinalLayout:    vk.ImageLayoutDepthStencilAttachmentOptimal,
-	}
-
-	depthAttachmentRef := vk.AttachmentReference{
-		Attachment: 1,
-		Layout:     vk.ImageLayoutDepthStencilAttachmentOptimal,
-	}
-
-	colorAttachmentResolve := vk.AttachmentDescription{
-		Format:         a.swapChainImageFormat,
 		Samples:        vk.SampleCount1Bit,
-		LoadOp:         vk.AttachmentLoadOpDontCare,
+		LoadOp:         vk.AttachmentLoadOpClear,
 		StoreOp:        vk.AttachmentStoreOpStore,
 		StencilLoadOp:  vk.AttachmentLoadOpDontCare,
 		StencilStoreOp: vk.AttachmentStoreOpDontCare,
@@ -733,35 +592,28 @@ func (a *VulkanTutorialApp) createRenderPass() error {
 		FinalLayout:    vk.ImageLayoutPresentSrc,
 	}
 
-	colorAttachmentResolveRef := vk.AttachmentReference{
-		Attachment: 2,
+	colorAttachmentRef := vk.AttachmentReference{
+		Attachment: 0,
 		Layout:     vk.ImageLayoutColorAttachmentOptimal,
 	}
 
 	subpass := vk.SubpassDescription{
-		PipelineBindPoint:       vk.PipelineBindPointGraphics,
-		ColorAttachmentCount:    1,
-		PColorAttachments:       []vk.AttachmentReference{colorAttachmentRef},
-		PDepthStencilAttachment: &depthAttachmentRef,
-		PResolveAttachments:     []vk.AttachmentReference{colorAttachmentResolveRef},
+		PipelineBindPoint:    vk.PipelineBindPointGraphics,
+		ColorAttachmentCount: 1,
+		PColorAttachments:    []vk.AttachmentReference{colorAttachmentRef},
 	}
 
 	dependency := vk.SubpassDependency{
-		SrcSubpass: vk.SubpassExternal,
-		DstSubpass: 0,
-		SrcStageMask: vk.PipelineStageFlags(vk.PipelineStageColorAttachmentOutputBit) |
-			vk.PipelineStageFlags(vk.PipelineStageEarlyFragmentTestsBit),
+		SrcSubpass:    vk.SubpassExternal,
+		DstSubpass:    0,
+		SrcStageMask:  vk.PipelineStageFlags(vk.PipelineStageColorAttachmentOutputBit),
 		SrcAccessMask: 0,
-		DstStageMask: vk.PipelineStageFlags(vk.PipelineStageColorAttachmentOutputBit) |
-			vk.PipelineStageFlags(vk.PipelineStageEarlyFragmentTestsBit),
-		DstAccessMask: vk.AccessFlags(vk.AccessColorAttachmentWriteBit) |
-			vk.AccessFlags(vk.AccessDepthStencilAttachmentWriteBit),
+		DstStageMask:  vk.PipelineStageFlags(vk.PipelineStageColorAttachmentOutputBit),
+		DstAccessMask: vk.AccessFlags(vk.AccessColorAttachmentWriteBit),
 	}
 
 	attachments := []vk.AttachmentDescription{
 		colorAttachment,
-		depthAttachment,
-		colorAttachmentResolve,
 	}
 
 	rederPassInfo := vk.RenderPassCreateInfo{
@@ -784,62 +636,26 @@ func (a *VulkanTutorialApp) createRenderPass() error {
 	return nil
 }
 
-func (a *VulkanTutorialApp) getMaxUsableSampleCount() vk.SampleCountFlagBits {
-	var deviceProps vk.PhysicalDeviceProperties
-	vk.GetPhysicalDeviceProperties(a.physicalDevice, &deviceProps)
-	deviceProps.Deref()
-	deviceProps.Limits.Deref()
-
-	counts := vk.SampleCountFlags(deviceProps.Limits.FramebufferColorSampleCounts) &
-		vk.SampleCountFlags(deviceProps.Limits.FramebufferDepthSampleCounts)
-
-	if counts&vk.SampleCountFlags(vk.SampleCount64Bit) != 0 {
-		return vk.SampleCount64Bit
-	}
-
-	if counts&vk.SampleCountFlags(vk.SampleCount32Bit) != 0 {
-		return vk.SampleCount32Bit
-	}
-
-	if counts&vk.SampleCountFlags(vk.SampleCount16Bit) != 0 {
-		return vk.SampleCount16Bit
-	}
-
-	if counts&vk.SampleCountFlags(vk.SampleCount8Bit) != 0 {
-		return vk.SampleCount8Bit
-	}
-
-	if counts&vk.SampleCountFlags(vk.SampleCount4Bit) != 0 {
-		return vk.SampleCount4Bit
-	}
-
-	if counts&vk.SampleCountFlags(vk.SampleCount2Bit) != 0 {
-		return vk.SampleCount2Bit
-	}
-
-	return vk.SampleCount1Bit
-}
-
-func (a *VulkanTutorialApp) createDescriptorSetLayout() error {
-	uboLayoutBinding := vk.DescriptorSetLayoutBinding{
-		Binding:            0,
-		DescriptorType:     vk.DescriptorTypeUniformBuffer,
-		DescriptorCount:    1,
-		StageFlags:         vk.ShaderStageFlags(vk.ShaderStageVertexBit),
-		PImmutableSamplers: nil,
-	}
-
-	samplerLayoutBinding := vk.DescriptorSetLayoutBinding{
-		Binding:            1,
-		DescriptorCount:    1,
-		DescriptorType:     vk.DescriptorTypeCombinedImageSampler,
-		PImmutableSamplers: nil,
-		StageFlags:         vk.ShaderStageFlags(vk.ShaderStageFragmentBit),
-	}
-
+func (a *VulkanComputeApp) createComputeDescriptorSetLayout() error {
 	bindings := []vk.DescriptorSetLayoutBinding{
-		uboLayoutBinding,
-		samplerLayoutBinding,
+		{
+			Binding:         0,
+			DescriptorCount: 1,
+			DescriptorType:  vk.DescriptorTypeUniformBuffer,
+			StageFlags:      vk.ShaderStageFlags(vk.ShaderStageComputeBit),
+		},
+		{
+			Binding:         1,
+			DescriptorCount: 1,
+			DescriptorType:  vk.DescriptorTypeStorageBuffer,
+			StageFlags:      vk.ShaderStageFlags(vk.ShaderStageComputeBit),
+		},
+		{
+			Binding:         2,
+			DescriptorCount: 1,
+			DescriptorType:  vk.DescriptorTypeStorageBuffer,
+			StageFlags:      vk.ShaderStageFlags(vk.ShaderStageComputeBit),
+		},
 	}
 
 	layoutInfo := vk.DescriptorSetLayoutCreateInfo{
@@ -853,12 +669,12 @@ func (a *VulkanTutorialApp) createDescriptorSetLayout() error {
 	if res != vk.Success {
 		return fmt.Errorf("creating descriptor set layout: %w", vk.Error(res))
 	}
-	a.descriptorSetLayout = descriptorSetLayout
+	a.computeDescriptorSetLayout = descriptorSetLayout
 
 	return nil
 }
 
-func (a *VulkanTutorialApp) createGraphicsPipeline() error {
+func (a *VulkanComputeApp) createGraphicsPipeline() error {
 	vertShaderCode, err := shaders.FS.ReadFile("vert.spv")
 	if err != nil {
 		return fmt.Errorf("failed to read vertex shader bytecode: %w", err)
@@ -905,14 +721,16 @@ func (a *VulkanTutorialApp) createGraphicsPipeline() error {
 		fragShaderStageInfo,
 	}
 
-	bindingDescription := GetVertexBindingDescription()
-	attributeDescriptions := GetVertexAttributeDescriptions()
+	bindingDescription := GetParticleBindingDescription()
+	attributeDescriptions := GetParticleAttributeDescriptions()
 
 	vertexInputInfo := vk.PipelineVertexInputStateCreateInfo{
 		SType: vk.StructureTypePipelineVertexInputStateCreateInfo,
 
 		VertexBindingDescriptionCount: 1,
-		PVertexBindingDescriptions:    []vk.VertexInputBindingDescription{bindingDescription},
+		PVertexBindingDescriptions: []vk.VertexInputBindingDescription{
+			bindingDescription,
+		},
 
 		VertexAttributeDescriptionCount: uint32(len(attributeDescriptions)),
 		PVertexAttributeDescriptions:    attributeDescriptions[:],
@@ -920,7 +738,7 @@ func (a *VulkanTutorialApp) createGraphicsPipeline() error {
 
 	inputAssembly := vk.PipelineInputAssemblyStateCreateInfo{
 		SType:                  vk.StructureTypePipelineInputAssemblyStateCreateInfo,
-		Topology:               vk.PrimitiveTopologyTriangleList,
+		Topology:               vk.PrimitiveTopologyPointList,
 		PrimitiveRestartEnable: vk.False,
 	}
 
@@ -971,8 +789,7 @@ func (a *VulkanTutorialApp) createGraphicsPipeline() error {
 	multisampling := vk.PipelineMultisampleStateCreateInfo{
 		SType:                 vk.StructureTypePipelineMultisampleStateCreateInfo,
 		SampleShadingEnable:   vk.False,
-		RasterizationSamples:  a.msaaSamples,
-		MinSampleShading:      1,
+		RasterizationSamples:  vk.SampleCount1Bit,
 		AlphaToCoverageEnable: vk.False,
 		AlphaToOneEnable:      vk.False,
 	}
@@ -984,10 +801,10 @@ func (a *VulkanTutorialApp) createGraphicsPipeline() error {
 				vk.ColorComponentBBit |
 				vk.ColorComponentABit,
 		),
-		BlendEnable:         vk.False,
-		SrcColorBlendFactor: vk.BlendFactorOne,
-		DstColorBlendFactor: vk.BlendFactorZero,
+		BlendEnable:         vk.True,
 		ColorBlendOp:        vk.BlendOpAdd,
+		SrcColorBlendFactor: vk.BlendFactorSrcAlpha,
+		DstColorBlendFactor: vk.BlendFactorOneMinusSrcAlpha,
 		SrcAlphaBlendFactor: vk.BlendFactorOne,
 		DstAlphaBlendFactor: vk.BlendFactorZero,
 		AlphaBlendOp:        vk.BlendOpAdd,
@@ -1005,8 +822,8 @@ func (a *VulkanTutorialApp) createGraphicsPipeline() error {
 
 	pipelineLayoutInfo := vk.PipelineLayoutCreateInfo{
 		SType:          vk.StructureTypePipelineLayoutCreateInfo,
-		SetLayoutCount: 1,
-		PSetLayouts:    []vk.DescriptorSetLayout{a.descriptorSetLayout},
+		SetLayoutCount: 0,
+		PSetLayouts:    nil,
 	}
 
 	var pipelineLayout vk.PipelineLayout
@@ -1015,17 +832,6 @@ func (a *VulkanTutorialApp) createGraphicsPipeline() error {
 		return fmt.Errorf("failed to create pipeline layout: %w", err)
 	}
 	a.pipelineLayout = pipelineLayout
-
-	depthStencil := vk.PipelineDepthStencilStateCreateInfo{
-		SType:                 vk.StructureTypePipelineDepthStencilStateCreateInfo,
-		DepthTestEnable:       vk.True,
-		DepthWriteEnable:      vk.True,
-		DepthCompareOp:        vk.CompareOpLess,
-		DepthBoundsTestEnable: vk.False,
-		MinDepthBounds:        0,
-		MaxDepthBounds:        1,
-		StencilTestEnable:     vk.False,
-	}
 
 	pipelineInfo := vk.GraphicsPipelineCreateInfo{
 		SType:               vk.StructureTypeGraphicsPipelineCreateInfo,
@@ -1036,7 +842,6 @@ func (a *VulkanTutorialApp) createGraphicsPipeline() error {
 		PViewportState:      &viewportState,
 		PRasterizationState: &rasterizer,
 		PMultisampleState:   &multisampling,
-		PDepthStencilState:  &depthStencil,
 		PColorBlendState:    &colorBlending,
 		PDynamicState:       &dynamicState,
 		Layout:              a.pipelineLayout,
@@ -1063,15 +868,72 @@ func (a *VulkanTutorialApp) createGraphicsPipeline() error {
 	return nil
 }
 
-func (a *VulkanTutorialApp) createFramebuffers() error {
+func (a *VulkanComputeApp) createComputePipeline() error {
+	computeShaderCode, err := shaders.FS.ReadFile("comp.spv")
+	if err != nil {
+		return fmt.Errorf("failed to read compute shader bytecode: %w", err)
+	}
+
+	if args.debug {
+		log.Printf("compute shader code size: %d", len(computeShaderCode))
+	}
+
+	computeShaderModule, err := a.createShaderModule(computeShaderCode)
+	if err != nil {
+		return fmt.Errorf("creating fragment shader module: %w", err)
+	}
+	defer vk.DestroyShaderModule(a.device, computeShaderModule, nil)
+
+	computeShaderStageInfo := vk.PipelineShaderStageCreateInfo{
+		SType:  vk.StructureTypePipelineShaderStageCreateInfo,
+		Stage:  vk.ShaderStageComputeBit,
+		Module: computeShaderModule,
+		PName:  "main\x00",
+	}
+
+	pipelineLayoutInfo := vk.PipelineLayoutCreateInfo{
+		SType:          vk.StructureTypePipelineLayoutCreateInfo,
+		SetLayoutCount: 1,
+		PSetLayouts:    []vk.DescriptorSetLayout{a.computeDescriptorSetLayout},
+	}
+
+	var pipelineLayout vk.PipelineLayout
+	res := vk.CreatePipelineLayout(a.device, &pipelineLayoutInfo, nil, &pipelineLayout)
+	if res != vk.Success {
+		return fmt.Errorf("failed to create compute pipeline layout: %w", vk.Error(res))
+	}
+	a.computePipelineLayout = pipelineLayout
+
+	pipelineInfo := vk.ComputePipelineCreateInfo{
+		SType:  vk.StructureTypeComputePipelineCreateInfo,
+		Layout: a.computePipelineLayout,
+		Stage:  computeShaderStageInfo,
+	}
+
+	pipelines := make([]vk.Pipeline, 1)
+	res = vk.CreateComputePipelines(
+		a.device,
+		vk.PipelineCache(vk.NullHandle),
+		1,
+		[]vk.ComputePipelineCreateInfo{pipelineInfo},
+		nil,
+		pipelines,
+	)
+	if res != vk.Success {
+		return fmt.Errorf("failed to create compute pipeline: %w", vk.Error(res))
+	}
+	a.computePipeline = pipelines[0]
+
+	return nil
+}
+
+func (a *VulkanComputeApp) createFramebuffers() error {
 	a.swapChainFramebuffers = make([]vk.Framebuffer, len(a.swapChainImageViews))
 
 	for i, swapChainView := range a.swapChainImageViews {
 		swapChainView := swapChainView
 
 		attachments := []vk.ImageView{
-			a.colorImageView,
-			a.depthImageView,
 			swapChainView,
 		}
 
@@ -1097,14 +959,14 @@ func (a *VulkanTutorialApp) createFramebuffers() error {
 	return nil
 }
 
-func (a *VulkanTutorialApp) createCommandPool() error {
+func (a *VulkanComputeApp) createCommandPool() error {
 	queueFamilyIndices := a.findQueueFamilies(a.physicalDevice)
 	poolInfo := vk.CommandPoolCreateInfo{
 		SType: vk.StructureTypeCommandPoolCreateInfo,
 		Flags: vk.CommandPoolCreateFlags(
 			vk.CommandPoolCreateResetCommandBufferBit,
 		),
-		QueueFamilyIndex: queueFamilyIndices.Graphics.Get(),
+		QueueFamilyIndex: queueFamilyIndices.GraphicsAndCompute.Get(),
 	}
 
 	var commandPool vk.CommandPool
@@ -1117,192 +979,7 @@ func (a *VulkanTutorialApp) createCommandPool() error {
 	return nil
 }
 
-func (a *VulkanTutorialApp) loadModel() error {
-	fh, err := os.Open(a.modelPath)
-	if err != nil {
-		return fmt.Errorf("cannot load model: %w", err)
-	}
-	defer fh.Close()
-
-	decoder := obj.NewDecoder(obj.DefaultLimits())
-	model, err := decoder.Decode(fh)
-	if err != nil {
-		return fmt.Errorf("failed to decode model: %w", err)
-	}
-
-	uniqueVertices := make(map[Vertex]uint32)
-
-	for _, shape := range model.Objects {
-		for _, mesh := range shape.Meshes {
-			for _, face := range mesh.Faces {
-				if len(face.References) != 3 {
-					return fmt.Errorf(
-						"face with %d references in shape %s",
-						len(face.References),
-						shape.Name,
-					)
-				}
-
-				for _, ref := range face.References {
-					vertex := Vertex{
-						pos: linmath.Vec3{
-							float32(model.Vertices[ref.VertexIndex].X),
-							float32(model.Vertices[ref.VertexIndex].Y),
-							float32(model.Vertices[ref.VertexIndex].Z),
-						},
-						texColor: linmath.Vec2{
-							float32(model.TexCoords[ref.TexCoordIndex].U),
-							1 - float32(model.TexCoords[ref.TexCoordIndex].V),
-						},
-						color: linmath.Vec3{1, 1, 1},
-					}
-
-					vertexIndex, ok := uniqueVertices[vertex]
-					if !ok {
-						vertexIndex = uint32(len(a.vertices))
-						uniqueVertices[vertex] = vertexIndex
-						a.vertices = append(a.vertices, vertex)
-					}
-
-					a.indices = append(a.indices, vertexIndex)
-				}
-
-			}
-		}
-	}
-
-	return nil
-}
-
-func (a *VulkanTutorialApp) createVertexBuffer() error {
-	bufferSize := vk.DeviceSize(uint32(len(a.vertices)) * GetVertexSize())
-
-	// Create the staging buffer
-	var (
-		stagingBuffer       vk.Buffer
-		stagingBufferMemory vk.DeviceMemory
-	)
-	err := a.createBuffer(
-		bufferSize,
-		vk.BufferUsageFlags(vk.BufferUsageTransferSrcBit),
-		vk.MemoryPropertyFlags(vk.MemoryPropertyHostVisibleBit)|
-			vk.MemoryPropertyFlags(vk.MemoryPropertyHostCoherentBit),
-		&stagingBuffer,
-		&stagingBufferMemory,
-	)
-	if err != nil {
-		return fmt.Errorf("creating the staging buffer: %w", err)
-	}
-
-	defer func() {
-		vk.DestroyBuffer(a.device, stagingBuffer, nil)
-		vk.FreeMemory(a.device, stagingBufferMemory, nil)
-	}()
-
-	// Copy the data from host to staging buffer
-	var pData unsafe.Pointer
-	vk.MapMemory(a.device, stagingBufferMemory, 0, bufferSize, 0, &pData)
-
-	bytesSlice := unsafer.SliceToBytes(a.vertices)
-
-	vk.Memcopy(pData, bytesSlice)
-	vk.UnmapMemory(a.device, stagingBufferMemory)
-
-	// Create the device local buffer
-	var (
-		vertexBuffer       vk.Buffer
-		vertexBufferMemory vk.DeviceMemory
-	)
-
-	err = a.createBuffer(
-		bufferSize,
-		vk.BufferUsageFlags(vk.BufferUsageTransferDstBit)|
-			vk.BufferUsageFlags(vk.BufferUsageVertexBufferBit),
-		vk.MemoryPropertyFlags(vk.MemoryPropertyDeviceLocalBit),
-		&vertexBuffer,
-		&vertexBufferMemory,
-	)
-	if err != nil {
-		return fmt.Errorf("creating the vertex buffer: %w", err)
-	}
-	a.vertexBuffer = vertexBuffer
-	a.vertexBufferMemory = vertexBufferMemory
-
-	// Copy data from the staging buffer to the device local buffer which is our
-	// vertex buffer
-	if err := a.copyBuffer(stagingBuffer, a.vertexBuffer, bufferSize); err != nil {
-		return fmt.Errorf("failed to copy staging buffer into vertex: %w", err)
-	}
-
-	return nil
-}
-
-func (a *VulkanTutorialApp) createIndexBuffer() error {
-	bufferSize := vk.DeviceSize(
-		uint32(len(a.indices)) * uint32(unsafe.Sizeof(a.indices[0])),
-	)
-
-	// Create the staging buffer
-	var (
-		stagingBuffer       vk.Buffer
-		stagingBufferMemory vk.DeviceMemory
-	)
-	err := a.createBuffer(
-		bufferSize,
-		vk.BufferUsageFlags(vk.BufferUsageTransferSrcBit),
-		vk.MemoryPropertyFlags(vk.MemoryPropertyHostVisibleBit)|
-			vk.MemoryPropertyFlags(vk.MemoryPropertyHostCoherentBit),
-		&stagingBuffer,
-		&stagingBufferMemory,
-	)
-	if err != nil {
-		return fmt.Errorf("creating the staging buffer: %w", err)
-	}
-
-	defer func() {
-		vk.DestroyBuffer(a.device, stagingBuffer, nil)
-		vk.FreeMemory(a.device, stagingBufferMemory, nil)
-	}()
-
-	// Copy the data from host to staging buffer
-	var pData unsafe.Pointer
-	vk.MapMemory(a.device, stagingBufferMemory, 0, bufferSize, 0, &pData)
-
-	bytesSlice := unsafer.SliceToBytes(a.indices)
-
-	vk.Memcopy(pData, bytesSlice)
-	vk.UnmapMemory(a.device, stagingBufferMemory)
-
-	// Create the device local buffer
-	var (
-		indexBuffer       vk.Buffer
-		indexBufferMemory vk.DeviceMemory
-	)
-
-	err = a.createBuffer(
-		bufferSize,
-		vk.BufferUsageFlags(vk.BufferUsageTransferDstBit)|
-			vk.BufferUsageFlags(vk.BufferUsageIndexBufferBit),
-		vk.MemoryPropertyFlags(vk.MemoryPropertyDeviceLocalBit),
-		&indexBuffer,
-		&indexBufferMemory,
-	)
-	if err != nil {
-		return fmt.Errorf("creating the index buffer: %w", err)
-	}
-	a.indexBuffer = indexBuffer
-	a.indexBufferMemory = indexBufferMemory
-
-	// Copy data from the staging buffer to the device local buffer which is our
-	// index buffer
-	if err := a.copyBuffer(stagingBuffer, a.indexBuffer, bufferSize); err != nil {
-		return fmt.Errorf("failed to copy staging buffer into index: %w", err)
-	}
-
-	return nil
-}
-
-func (a *VulkanTutorialApp) copyBuffer(
+func (a *VulkanComputeApp) copyBuffer(
 	srcBuffer vk.Buffer,
 	dstBuffer vk.Buffer,
 	size vk.DeviceSize,
@@ -1323,7 +1000,7 @@ func (a *VulkanTutorialApp) copyBuffer(
 	return a.endSingleTimeCommands(commandBuffer)
 }
 
-func (a *VulkanTutorialApp) beginSingleTimeCommands() (vk.CommandBuffer, error) {
+func (a *VulkanComputeApp) beginSingleTimeCommands() (vk.CommandBuffer, error) {
 	allocInfo := vk.CommandBufferAllocateInfo{
 		SType:              vk.StructureTypeCommandBufferAllocateInfo,
 		Level:              vk.CommandBufferLevelPrimary,
@@ -1352,7 +1029,7 @@ func (a *VulkanTutorialApp) beginSingleTimeCommands() (vk.CommandBuffer, error) 
 	return commandBuffer, nil
 }
 
-func (a *VulkanTutorialApp) endSingleTimeCommands(commandBuffer vk.CommandBuffer) error {
+func (a *VulkanComputeApp) endSingleTimeCommands(commandBuffer vk.CommandBuffer) error {
 	commandBuffers := []vk.CommandBuffer{commandBuffer}
 
 	defer func() {
@@ -1383,76 +1060,7 @@ func (a *VulkanTutorialApp) endSingleTimeCommands(commandBuffer vk.CommandBuffer
 	return nil
 }
 
-func (a *VulkanTutorialApp) transitionImageLayout(
-	image vk.Image,
-	format vk.Format,
-	oldLayout vk.ImageLayout,
-	newLayout vk.ImageLayout,
-	mipLevels uint32,
-) error {
-	commandBuffer, err := a.beginSingleTimeCommands()
-	if err != nil {
-		return fmt.Errorf("failed to begin single time commands: %w", err)
-	}
-
-	barrier := vk.ImageMemoryBarrier{
-		SType:               vk.StructureTypeImageMemoryBarrier,
-		OldLayout:           oldLayout,
-		NewLayout:           newLayout,
-		SrcQueueFamilyIndex: vk.QueueFamilyIgnored,
-		DstQueueFamilyIndex: vk.QueueFamilyIgnored,
-		Image:               image,
-		SubresourceRange: vk.ImageSubresourceRange{
-			AspectMask:     vk.ImageAspectFlags(vk.ImageAspectColorBit),
-			BaseMipLevel:   0,
-			LevelCount:     mipLevels,
-			BaseArrayLayer: 0,
-			LayerCount:     1,
-		},
-		SrcAccessMask: 0,
-		DstAccessMask: 0,
-	}
-
-	var (
-		sourceStage      vk.PipelineStageFlags
-		destinationStage vk.PipelineStageFlags
-	)
-
-	if oldLayout == vk.ImageLayoutUndefined &&
-		newLayout == vk.ImageLayoutTransferDstOptimal {
-
-		barrier.SrcAccessMask = 0
-		barrier.DstAccessMask = vk.AccessFlags(vk.AccessTransferWriteBit)
-
-		sourceStage = vk.PipelineStageFlags(vk.PipelineStageTopOfPipeBit)
-		destinationStage = vk.PipelineStageFlags(vk.PipelineStageTransferBit)
-
-	} else if oldLayout == vk.ImageLayoutTransferDstOptimal &&
-		newLayout == vk.ImageLayoutShaderReadOnlyOptimal {
-
-		barrier.SrcAccessMask = vk.AccessFlags(vk.AccessTransferWriteBit)
-		barrier.DstAccessMask = vk.AccessFlags(vk.AccessShaderReadBit)
-
-		sourceStage = vk.PipelineStageFlags(vk.PipelineStageTransferBit)
-		destinationStage = vk.PipelineStageFlags(vk.PipelineStageFragmentShaderBit)
-
-	} else {
-		return fmt.Errorf("unsupported layout transition")
-	}
-
-	vk.CmdPipelineBarrier(
-		commandBuffer,
-		sourceStage, destinationStage,
-		0,
-		0, nil,
-		0, nil,
-		1, []vk.ImageMemoryBarrier{barrier},
-	)
-
-	return a.endSingleTimeCommands(commandBuffer)
-}
-
-func (a *VulkanTutorialApp) copyBufferToImage(
+func (a *VulkanComputeApp) copyBufferToImage(
 	buffer vk.Buffer,
 	image vk.Image,
 	width, height uint32,
@@ -1497,7 +1105,7 @@ func (a *VulkanTutorialApp) copyBufferToImage(
 	return a.endSingleTimeCommands(commandBuffer)
 }
 
-func (a *VulkanTutorialApp) createUniformBuffers() error {
+func (a *VulkanComputeApp) createUniformBuffers() error {
 	bufferSize := vk.DeviceSize(unsafe.Sizeof(UniformBufferObject{}))
 
 	for i := 0; i < maxFramesInFlight; i++ {
@@ -1528,15 +1136,15 @@ func (a *VulkanTutorialApp) createUniformBuffers() error {
 	return nil
 }
 
-func (a *VulkanTutorialApp) createDescriptorPool() error {
+func (a *VulkanComputeApp) createDescriptorPool() error {
 	poolSizes := []vk.DescriptorPoolSize{
 		{
 			Type:            vk.DescriptorTypeUniformBuffer,
 			DescriptorCount: maxFramesInFlight,
 		},
 		{
-			Type:            vk.DescriptorTypeCombinedImageSampler,
-			DescriptorCount: maxFramesInFlight,
+			Type:            vk.DescriptorTypeStorageBuffer,
+			DescriptorCount: maxFramesInFlight * 2,
 		},
 	}
 
@@ -1557,10 +1165,10 @@ func (a *VulkanTutorialApp) createDescriptorPool() error {
 	return nil
 }
 
-func (a *VulkanTutorialApp) createDescriptorSets() error {
+func (a *VulkanComputeApp) createComputeDescriptorSets() error {
 	layouts := []vk.DescriptorSetLayout{
-		a.descriptorSetLayout,
-		a.descriptorSetLayout,
+		a.computeDescriptorSetLayout,
+		a.computeDescriptorSetLayout,
 	}
 
 	allocInfo := vk.DescriptorSetAllocateInfo{
@@ -1570,44 +1178,64 @@ func (a *VulkanTutorialApp) createDescriptorSets() error {
 		PSetLayouts:        layouts,
 	}
 
-	a.descriptorSets = make([]vk.DescriptorSet, maxFramesInFlight)
+	a.computeDescriptorSets = make([]vk.DescriptorSet, maxFramesInFlight)
 
-	res := vk.AllocateDescriptorSets(a.device, &allocInfo, &a.descriptorSets[0])
+	res := vk.AllocateDescriptorSets(a.device, &allocInfo, &a.computeDescriptorSets[0])
 	if res != vk.Success {
 		return fmt.Errorf("failed to allocate descriptor set: %w", vk.Error(res))
 	}
 
 	for i := 0; i < maxFramesInFlight; i++ {
-		bufferInfo := vk.DescriptorBufferInfo{
+		uniformBufferInfo := vk.DescriptorBufferInfo{
 			Buffer: a.uniformBuffers[i],
 			Offset: 0,
-			Range:  vk.DeviceSize(vk.WholeSize),
+			Range:  vk.DeviceSize(unsafe.Sizeof(UniformBufferObject{})),
 		}
 
-		imageInfo := vk.DescriptorImageInfo{
-			ImageLayout: vk.ImageLayoutShaderReadOnlyOptimal,
-			ImageView:   a.textureImageView,
-			Sampler:     a.textureSampler,
+		prevInd := (i - 1) % maxFramesInFlight
+		if prevInd < 0 {
+			prevInd = len(a.shaderStorageBuffers) + prevInd
+		}
+
+		storageBufferInfoLastFrame := vk.DescriptorBufferInfo{
+			Buffer: a.shaderStorageBuffers[prevInd],
+			Offset: 0,
+			Range:  vk.DeviceSize(unsafe.Sizeof(Particle{})) * particleCount,
+		}
+
+		storageBufferInfoCurrentFrame := vk.DescriptorBufferInfo{
+			Buffer: a.shaderStorageBuffers[i],
+			Offset: 0,
+			Range:  vk.DeviceSize(unsafe.Sizeof(Particle{})) * particleCount,
 		}
 
 		descriptorWrites := []vk.WriteDescriptorSet{
 			{
 				SType:           vk.StructureTypeWriteDescriptorSet,
-				DstSet:          a.descriptorSets[i],
+				DstSet:          a.computeDescriptorSets[i],
 				DstBinding:      0,
 				DstArrayElement: 0,
 				DescriptorType:  vk.DescriptorTypeUniformBuffer,
 				DescriptorCount: 1,
-				PBufferInfo:     []vk.DescriptorBufferInfo{bufferInfo},
+				PBufferInfo:     []vk.DescriptorBufferInfo{uniformBufferInfo},
 			},
 			{
 				SType:           vk.StructureTypeWriteDescriptorSet,
-				DstSet:          a.descriptorSets[i],
+				DstSet:          a.computeDescriptorSets[i],
 				DstBinding:      1,
 				DstArrayElement: 0,
-				DescriptorType:  vk.DescriptorTypeCombinedImageSampler,
+				DescriptorType:  vk.DescriptorTypeStorageBuffer,
 				DescriptorCount: 1,
-				PImageInfo:      []vk.DescriptorImageInfo{imageInfo},
+				PBufferInfo:     []vk.DescriptorBufferInfo{storageBufferInfoLastFrame},
+			},
+			{
+				SType:           vk.StructureTypeWriteDescriptorSet,
+				DstSet:          a.computeDescriptorSets[i],
+				DstBinding:      2,
+				DstArrayElement: 0,
+				DescriptorType:  vk.DescriptorTypeStorageBuffer,
+				DescriptorCount: 1,
+				PBufferInfo:     []vk.DescriptorBufferInfo{storageBufferInfoCurrentFrame},
 			},
 		}
 
@@ -1623,7 +1251,7 @@ func (a *VulkanTutorialApp) createDescriptorSets() error {
 	return nil
 }
 
-func (a *VulkanTutorialApp) createBuffer(
+func (a *VulkanComputeApp) createBuffer(
 	size vk.DeviceSize,
 	usage vk.BufferUsageFlags,
 	properties vk.MemoryPropertyFlags,
@@ -1670,7 +1298,7 @@ func (a *VulkanTutorialApp) createBuffer(
 	return nil
 }
 
-func (a *VulkanTutorialApp) createImage(
+func (a *VulkanComputeApp) createImage(
 	width uint32,
 	height uint32,
 	mipLevels uint32,
@@ -1733,7 +1361,7 @@ func (a *VulkanTutorialApp) createImage(
 	return nil
 }
 
-func (a *VulkanTutorialApp) findMemoryType(
+func (a *VulkanComputeApp) findMemoryType(
 	typeFilter uint32,
 	properties vk.MemoryPropertyFlags,
 ) (uint32, error) {
@@ -1759,398 +1387,81 @@ func (a *VulkanTutorialApp) findMemoryType(
 	return 0, fmt.Errorf("failed to find suitable memory type")
 }
 
-func (a *VulkanTutorialApp) createColorResources() error {
-	colorFormat := a.swapChainImageFormat
+func (a *VulkanComputeApp) createShaderStorageBuffers() error {
+	a.shaderStorageBuffers = make([]vk.Buffer, maxFramesInFlight)
+	a.shaderStorageBuffersMemory = make([]vk.DeviceMemory, maxFramesInFlight)
 
-	var (
-		colorImage       vk.Image
-		colorImageMemory vk.DeviceMemory
-	)
-	err := a.createImage(
-		a.swapChainExtend.Width,
-		a.swapChainExtend.Height,
-		1,
-		a.msaaSamples,
-		colorFormat,
-		vk.ImageTilingOptimal,
-		vk.ImageUsageFlags(vk.ImageUsageTransientAttachmentBit)|
-			vk.ImageUsageFlags(vk.ImageUsageColorAttachmentBit),
-		vk.MemoryPropertyFlags(vk.MemoryPropertyDeviceLocalBit),
-		&colorImage,
-		&colorImageMemory,
-	)
-	if err != nil {
-		return fmt.Errorf("cannot create image: %w", err)
-	}
-	a.colorImage = colorImage
-	a.colorImageMemory = colorImageMemory
+	particles := make([]Particle, 0, particleCount)
+	for i := 0; i < particleCount; i++ {
+		r := 0.25 * math.Sqrt(rand.Float64())
+		theta := rand.Float64() * 2 * math.Pi
+		x := r * math.Cos(theta) * float64(a.height) / float64(a.width)
+		y := r * math.Sin(theta)
 
-	colorImageView, err := a.createImageView(
-		a.colorImage,
-		colorFormat,
-		vk.ImageAspectFlags(vk.ImageAspectColorBit),
-		1,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create image view: %w", err)
-	}
-	a.colorImageView = colorImageView
+		vel := linmath.Vec2{float32(x), float32(y)}
+		vel.Norm(&vel)
 
-	return nil
-}
-
-func (a *VulkanTutorialApp) createDepthResources() error {
-	depthFormat, err := a.findDepthFormat()
-	if err != nil {
-		return fmt.Errorf("could not find suitable depth image format: %w", err)
-	}
-
-	var (
-		depthImage       vk.Image
-		depthImageMemory vk.DeviceMemory
-	)
-
-	err = a.createImage(
-		a.swapChainExtend.Width,
-		a.swapChainExtend.Height,
-		1,
-		a.msaaSamples,
-		depthFormat,
-		vk.ImageTilingOptimal,
-		vk.ImageUsageFlags(vk.ImageUsageDepthStencilAttachmentBit),
-		vk.MemoryPropertyFlags(vk.MemoryPropertyDeviceLocalBit),
-		&depthImage,
-		&depthImageMemory,
-	)
-	if err != nil {
-		return fmt.Errorf("could not create depth image: %w", err)
-	}
-
-	a.depthImage = depthImage
-	a.depthImageMemory = depthImageMemory
-
-	depthImageView, err := a.createImageView(
-		depthImage,
-		depthFormat,
-		vk.ImageAspectFlags(vk.ImageAspectDepthBit),
-		1,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create depth image view: %w", err)
-	}
-	a.depthImageView = depthImageView
-
-	return nil
-}
-
-func (a *VulkanTutorialApp) findSupportedFormat(
-	candidates []vk.Format,
-	tiling vk.ImageTiling,
-	features vk.FormatFeatureFlags,
-) (vk.Format, error) {
-	for _, format := range candidates {
-		var props vk.FormatProperties
-		vk.GetPhysicalDeviceFormatProperties(a.physicalDevice, format, &props)
-		props.Deref()
-
-		if tiling == vk.ImageTilingLinear &&
-			(props.LinearTilingFeatures&features) == features {
-			return format, nil
+		particle := Particle{
+			position: linmath.Vec2{float32(x), float32(y)},
+			velocity: linmath.Vec2{vel[0] * 0.00025, vel[1] * 0.00025},
+			color:    linmath.Vec4{rand.Float32(), rand.Float32(), rand.Float32(), 1},
 		}
 
-		if tiling == vk.ImageTilingOptimal &&
-			(props.OptimalTilingFeatures&features) == features {
-			return format, nil
-		}
-
+		particles = append(particles, particle)
 	}
 
-	return 0, fmt.Errorf("could not find suitable format")
-}
-
-func (a *VulkanTutorialApp) findDepthFormat() (vk.Format, error) {
-	return a.findSupportedFormat(
-		[]vk.Format{
-			vk.FormatD32Sfloat,
-			vk.FormatD32SfloatS8Uint,
-			vk.FormatD24UnormS8Uint,
-		},
-		vk.ImageTilingOptimal,
-		vk.FormatFeatureFlags(vk.FormatFeatureDepthStencilAttachmentBit),
-	)
-}
-
-func (a *VulkanTutorialApp) hasStencilComponent(format vk.Format) bool {
-	return format == vk.FormatD32SfloatS8Uint || format == vk.FormatD24UnormS8Uint
-}
-
-func (a *VulkanTutorialApp) createTextureImage() error {
-	fh, err := os.Open(a.texturePath)
-	if err != nil {
-		return fmt.Errorf("failed to open texture file: %w", err)
-	}
-	defer fh.Close()
-
-	img, _, err := image.Decode(fh)
-	if err != nil {
-		return fmt.Errorf("failed to decode texture image: %w", err)
-	}
-
-	imgBoundsSize := img.Bounds().Size()
-	texWidth := uint32(imgBoundsSize.X)
-	texHeight := uint32(imgBoundsSize.Y)
-
-	imgSize := vk.DeviceSize(texWidth * texHeight * 4)
-	a.mipLevels = uint32(math.Floor(
-		math.Log2(math.Max(float64(texWidth), float64(texHeight))),
-	)) + 1
+	bufferSize := vk.DeviceSize(uint64(unsafe.Sizeof(Particle{})) * particleCount)
 
 	var (
-		staginbBuffer       vk.Buffer
+		stagingBuffer       vk.Buffer
 		stagingBufferMemory vk.DeviceMemory
 	)
-
-	err = a.createBuffer(
-		imgSize,
+	err := a.createBuffer(
+		bufferSize,
 		vk.BufferUsageFlags(vk.BufferUsageTransferSrcBit),
 		vk.MemoryPropertyFlags(vk.MemoryPropertyHostVisibleBit)|
 			vk.MemoryPropertyFlags(vk.MemoryPropertyHostCoherentBit),
-		&staginbBuffer,
+		&stagingBuffer,
 		&stagingBufferMemory,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create texture GPU buffer: %w", err)
+		return fmt.Errorf("failed to create staging buffer for particles: %w", err)
 	}
-
 	defer func() {
-		vk.DestroyBuffer(a.device, staginbBuffer, nil)
+		vk.DestroyBuffer(a.device, stagingBuffer, nil)
 		vk.FreeMemory(a.device, stagingBufferMemory, nil)
 	}()
 
 	var pData unsafe.Pointer
-	vk.MapMemory(a.device, stagingBufferMemory, 0, imgSize, 0, &pData)
-	defer vk.UnmapMemory(a.device, stagingBufferMemory)
+	vk.MapMemory(a.device, stagingBufferMemory, 0, bufferSize, 0, &pData)
+	particlesAsBytes := unsafer.SliceToBytes(particles)
+	vk.Memcopy(pData, particlesAsBytes)
+	vk.UnmapMemory(a.device, stagingBufferMemory)
 
-	// convert the image to RGBA if it is not already
-	b := img.Bounds()
-	rgbaImg := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
-	draw.Draw(rgbaImg, rgbaImg.Bounds(), img, b.Min, draw.Src)
+	for i := 0; i < maxFramesInFlight; i++ {
+		err = a.createBuffer(
+			bufferSize,
+			vk.BufferUsageFlags(vk.BufferUsageStorageBufferBit)|
+				vk.BufferUsageFlags(vk.BufferUsageVertexBufferBit)|
+				vk.BufferUsageFlags(vk.BufferUsageTransferDstBit),
+			vk.MemoryPropertyFlags(vk.MemoryPropertyDeviceLocalBit),
+			&a.shaderStorageBuffers[i],
+			&a.shaderStorageBuffersMemory[i],
+		)
+		if err != nil {
+			return fmt.Errorf("creating device local buffer for particles: %w", err)
+		}
 
-	// copy its data
-	vk.Memcopy(pData, rgbaImg.Pix)
-
-	var (
-		textureImage       vk.Image
-		textureImageMemory vk.DeviceMemory
-	)
-
-	err = a.createImage(
-		texWidth,
-		texHeight,
-		a.mipLevels,
-		vk.SampleCount1Bit,
-		vk.FormatR8g8b8a8Srgb,
-		vk.ImageTilingOptimal,
-		vk.ImageUsageFlags(vk.ImageUsageTransferDstBit)|
-			vk.ImageUsageFlags(vk.ImageUsageSampledBit)|
-			vk.ImageUsageFlags(vk.ImageUsageTransferSrcBit),
-		vk.MemoryPropertyFlags(vk.MemoryPropertyDeviceLocalBit),
-		&textureImage,
-		&textureImageMemory,
-	)
-	if err != nil {
-		return fmt.Errorf("filed to create Vulkan image: %w", err)
-	}
-	a.textureImage = textureImage
-	a.textureImageMemory = textureImageMemory
-
-	err = a.transitionImageLayout(
-		a.textureImage,
-		vk.FormatR8g8b8a8Srgb,
-		vk.ImageLayoutUndefined,
-		vk.ImageLayoutTransferDstOptimal,
-		a.mipLevels,
-	)
-	if err != nil {
-		return fmt.Errorf("transition image layout: %w", err)
-	}
-
-	err = a.copyBufferToImage(staginbBuffer, a.textureImage, texWidth, texHeight)
-	if err != nil {
-		return fmt.Errorf("copying buffer to image: %w", err)
-	}
-
-	err = a.generateMipmaps(
-		textureImage,
-		vk.FormatR8g8b8a8Srgb,
-		texWidth,
-		texHeight,
-		a.mipLevels,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to generate texture mipmaps: %w", err)
+		err = a.copyBuffer(stagingBuffer, a.shaderStorageBuffers[i], bufferSize)
+		if err != nil {
+			return fmt.Errorf("failed to copy staging buffer to local mem: %w", err)
+		}
 	}
 
 	return nil
 }
 
-func (a *VulkanTutorialApp) generateMipmaps(
-	image vk.Image,
-	imageFormat vk.Format,
-	texWidth, texHeight uint32,
-	mipLevels uint32,
-) error {
-	// Check if image format supports linear blitting
-	var formatProperties vk.FormatProperties
-	vk.GetPhysicalDeviceFormatProperties(a.physicalDevice, imageFormat, &formatProperties)
-	formatProperties.Deref()
-
-	formatFlags := formatProperties.OptimalTilingFeatures
-	requiredFlags := vk.FormatFeatureFlags(vk.FormatFeatureSampledImageFilterLinearBit)
-
-	if formatFlags&requiredFlags == 0 {
-		return fmt.Errorf("texture image format does not support linear bilitting")
-	}
-
-	commandBuffer, err := a.beginSingleTimeCommands()
-	if err != nil {
-		return fmt.Errorf("failed to create single time command buffer: %w", err)
-	}
-
-	barrier := vk.ImageMemoryBarrier{
-		SType:               vk.StructureTypeImageMemoryBarrier,
-		Image:               image,
-		SrcQueueFamilyIndex: vk.QueueFamilyIgnored,
-		DstQueueFamilyIndex: vk.QueueFamilyIgnored,
-		SubresourceRange: vk.ImageSubresourceRange{
-			AspectMask:     vk.ImageAspectFlags(vk.ImageAspectColorBit),
-			BaseArrayLayer: 0,
-			LayerCount:     1,
-			LevelCount:     1,
-		},
-	}
-
-	var (
-		mipWidth  = texWidth
-		mipHeight = texHeight
-	)
-	for i := uint32(1); i < a.mipLevels; i++ {
-		barrier.SubresourceRange.BaseMipLevel = i - 1
-		barrier.OldLayout = vk.ImageLayoutTransferDstOptimal
-		barrier.NewLayout = vk.ImageLayoutTransferSrcOptimal
-		barrier.SrcAccessMask = vk.AccessFlags(vk.AccessTransferWriteBit)
-		barrier.DstAccessMask = vk.AccessFlags(vk.AccessTransferReadBit)
-
-		vk.CmdPipelineBarrier(
-			commandBuffer,
-			vk.PipelineStageFlags(vk.PipelineStageTransferBit),
-			vk.PipelineStageFlags(vk.PipelineStageTransferBit),
-			0,
-			0, nil,
-			0, nil,
-			1, []vk.ImageMemoryBarrier{barrier},
-		)
-
-		var (
-			newWidth  = int32(1)
-			newHeight = int32(1)
-		)
-		if mipWidth > 1 {
-			newWidth = int32(mipWidth) / 2
-		}
-		if mipHeight > 1 {
-			newHeight = int32(mipHeight) / 2
-		}
-
-		blit := vk.ImageBlit{
-			SrcOffsets: [2]vk.Offset3D{
-				{X: 0, Y: 0, Z: 0},
-				{X: int32(mipWidth), Y: int32(mipHeight), Z: 1},
-			},
-			SrcSubresource: vk.ImageSubresourceLayers{
-				AspectMask:     vk.ImageAspectFlags(vk.ImageAspectColorBit),
-				MipLevel:       i - 1,
-				BaseArrayLayer: 0,
-				LayerCount:     1,
-			},
-			DstOffsets: [2]vk.Offset3D{
-				{X: 0, Y: 0, Z: 0},
-				{X: newWidth, Y: newHeight, Z: 1},
-			},
-			DstSubresource: vk.ImageSubresourceLayers{
-				AspectMask:     vk.ImageAspectFlags(vk.ImageAspectColorBit),
-				MipLevel:       i,
-				BaseArrayLayer: 0,
-				LayerCount:     1,
-			},
-		}
-
-		vk.CmdBlitImage(
-			commandBuffer,
-			image, vk.ImageLayoutTransferSrcOptimal,
-			image, vk.ImageLayoutTransferDstOptimal,
-			1, []vk.ImageBlit{blit},
-			vk.FilterLinear,
-		)
-
-		barrier.OldLayout = vk.ImageLayoutTransferSrcOptimal
-		barrier.NewLayout = vk.ImageLayoutShaderReadOnlyOptimal
-		barrier.SrcAccessMask = vk.AccessFlags(vk.AccessTransferReadBit)
-		barrier.DstAccessMask = vk.AccessFlags(vk.AccessShaderReadBit)
-
-		vk.CmdPipelineBarrier(
-			commandBuffer,
-			vk.PipelineStageFlags(vk.PipelineStageTransferBit),
-			vk.PipelineStageFlags(vk.PipelineStageFragmentShaderBit),
-			0,
-			0, nil,
-			0, nil,
-			1, []vk.ImageMemoryBarrier{barrier},
-		)
-
-		if mipWidth > 1 {
-			mipWidth /= 2
-		}
-		if mipHeight > 1 {
-			mipHeight /= 2
-		}
-	}
-
-	barrier.SubresourceRange.BaseMipLevel = mipLevels - 1
-	barrier.OldLayout = vk.ImageLayoutTransferDstOptimal
-	barrier.NewLayout = vk.ImageLayoutShaderReadOnlyOptimal
-	barrier.SrcAccessMask = vk.AccessFlags(vk.AccessTransferWriteBit)
-	barrier.DstAccessMask = vk.AccessFlags(vk.AccessShaderReadBit)
-
-	vk.CmdPipelineBarrier(
-		commandBuffer,
-		vk.PipelineStageFlags(vk.PipelineStageTransferBit),
-		vk.PipelineStageFlags(vk.PipelineStageFragmentShaderBit),
-		0,
-		0, nil,
-		0, nil,
-		1, []vk.ImageMemoryBarrier{barrier},
-	)
-
-	return a.endSingleTimeCommands(commandBuffer)
-}
-
-func (a *VulkanTutorialApp) createTextureImageView() error {
-	textureImageView, err := a.createImageView(
-		a.textureImage,
-		vk.FormatR8g8b8a8Srgb,
-		vk.ImageAspectFlags(vk.ImageAspectColorBit),
-		a.mipLevels,
-	)
-	if err != nil {
-		return err
-	}
-	a.textureImageView = textureImageView
-
-	return nil
-}
-
-func (a *VulkanTutorialApp) createImageView(
+func (a *VulkanComputeApp) createImageView(
 	image vk.Image,
 	format vk.Format,
 	aspectFlags vk.ImageAspectFlags,
@@ -2185,49 +1496,15 @@ func (a *VulkanTutorialApp) createImageView(
 	return imageView, nil
 }
 
-func (a *VulkanTutorialApp) createTextureSampler() error {
-	var properties vk.PhysicalDeviceProperties
-	vk.GetPhysicalDeviceProperties(a.physicalDevice, &properties)
-	properties.Deref()
-	properties.Limits.Deref()
-
-	samplerInfo := vk.SamplerCreateInfo{
-		SType:                   vk.StructureTypeSamplerCreateInfo,
-		MagFilter:               vk.FilterLinear,
-		MinFilter:               vk.FilterLinear,
-		AddressModeU:            vk.SamplerAddressModeRepeat,
-		AddressModeV:            vk.SamplerAddressModeRepeat,
-		AddressModeW:            vk.SamplerAddressModeRepeat,
-		AnisotropyEnable:        vk.True,
-		MaxAnisotropy:           properties.Limits.MaxSamplerAnisotropy,
-		UnnormalizedCoordinates: vk.False,
-		CompareEnable:           vk.False,
-		CompareOp:               vk.CompareOpAlways,
-		MipmapMode:              vk.SamplerMipmapModeLinear,
-		MinLod:                  0,
-		MaxLod:                  float32(a.mipLevels),
-		MipLodBias:              0,
-	}
-
-	var sampler vk.Sampler
-	res := vk.CreateSampler(a.device, &samplerInfo, nil, &sampler)
-	if res != vk.Success {
-		return fmt.Errorf("failed to create sampler: %w", vk.Error(res))
-	}
-	a.textureSampler = sampler
-
-	return nil
-}
-
-func (a *VulkanTutorialApp) createCommandBuffer() error {
+func (a *VulkanComputeApp) createCommandBuffer() error {
 	allocInfo := vk.CommandBufferAllocateInfo{
 		SType:              vk.StructureTypeCommandBufferAllocateInfo,
 		CommandPool:        a.commandPool,
 		Level:              vk.CommandBufferLevelPrimary,
-		CommandBufferCount: 2,
+		CommandBufferCount: maxFramesInFlight,
 	}
 
-	commandBuffers := make([]vk.CommandBuffer, 2)
+	commandBuffers := make([]vk.CommandBuffer, maxFramesInFlight)
 	res := vk.AllocateCommandBuffers(a.device, &allocInfo, commandBuffers)
 	if err := vk.Error(res); err != nil {
 		return fmt.Errorf("failed to allocate command buffer: %w", err)
@@ -2237,7 +1514,60 @@ func (a *VulkanTutorialApp) createCommandBuffer() error {
 	return nil
 }
 
-func (a *VulkanTutorialApp) recordCommandBuffer(
+func (a *VulkanComputeApp) createComputeCommandBuffers() error {
+	allocInfo := vk.CommandBufferAllocateInfo{
+		SType:              vk.StructureTypeCommandBufferAllocateInfo,
+		CommandPool:        a.commandPool,
+		Level:              vk.CommandBufferLevelPrimary,
+		CommandBufferCount: maxFramesInFlight,
+	}
+
+	commandBuffers := make([]vk.CommandBuffer, maxFramesInFlight)
+	res := vk.AllocateCommandBuffers(a.device, &allocInfo, commandBuffers)
+	if err := vk.Error(res); err != nil {
+		return fmt.Errorf("failed to allocate command buffer: %w", err)
+	}
+	a.computeCommandBuffers = commandBuffers
+
+	return nil
+}
+
+func (a *VulkanComputeApp) recordComputeCommandBuffer(
+	commandBuffer vk.CommandBuffer,
+) error {
+	beginInfo := vk.CommandBufferBeginInfo{
+		SType: vk.StructureTypeCommandBufferBeginInfo,
+	}
+
+	if res := vk.BeginCommandBuffer(commandBuffer, &beginInfo); res != vk.Success {
+		return fmt.Errorf(
+			"failed to begin recording compute command buffer: %w",
+			vk.Error(res),
+		)
+	}
+
+	vk.CmdBindPipeline(commandBuffer, vk.PipelineBindPointCompute, a.computePipeline)
+	vk.CmdBindDescriptorSets(
+		commandBuffer,
+		vk.PipelineBindPointCompute,
+		a.computePipelineLayout,
+		0,
+		1,
+		[]vk.DescriptorSet{a.computeDescriptorSets[a.currentFrame]},
+		0,
+		nil,
+	)
+
+	vk.CmdDispatch(commandBuffer, particleCount/256, 1, 1)
+	res := vk.EndCommandBuffer(commandBuffer)
+	if res != vk.Success {
+		return fmt.Errorf("failed to record compute command buffer: %w", vk.Error(res))
+	}
+
+	return nil
+}
+
+func (a *VulkanComputeApp) recordCommandBuffer(
 	commandBuffer vk.CommandBuffer,
 	imageIndex uint32,
 ) error {
@@ -2251,10 +1581,8 @@ func (a *VulkanTutorialApp) recordCommandBuffer(
 		return fmt.Errorf("cannot add begin command to the buffer: %w", err)
 	}
 
-	var clearValues [2]vk.ClearValue
-
+	var clearValues [1]vk.ClearValue
 	clearValues[0].SetColor([]float32{0, 0, 0, 1})
-	clearValues[1].SetDepthStencil(1, 0)
 
 	renderPassInfo := vk.RenderPassBeginInfo{
 		SType:       vk.StructureTypeRenderPassBeginInfo,
@@ -2274,12 +1602,6 @@ func (a *VulkanTutorialApp) recordCommandBuffer(
 	vk.CmdBeginRenderPass(commandBuffer, &renderPassInfo, vk.SubpassContentsInline)
 	vk.CmdBindPipeline(commandBuffer, vk.PipelineBindPointGraphics, a.graphicsPipline)
 
-	vertexBuffers := []vk.Buffer{a.vertexBuffer}
-	offsets := []vk.DeviceSize{0}
-	vk.CmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets)
-
-	vk.CmdBindIndexBuffer(commandBuffer, a.indexBuffer, 0, vk.IndexTypeUint32)
-
 	viewport := vk.Viewport{
 		X: 0, Y: 0,
 		Width:    float32(a.swapChainExtend.Width),
@@ -2295,27 +1617,20 @@ func (a *VulkanTutorialApp) recordCommandBuffer(
 	}
 	vk.CmdSetScissor(commandBuffer, 0, 1, []vk.Rect2D{scissor})
 
-	vk.CmdBindDescriptorSets(
-		commandBuffer,
-		vk.PipelineBindPointGraphics,
-		a.pipelineLayout,
-		0,
-		1,
-		[]vk.DescriptorSet{a.descriptorSets[a.curentFrame]},
-		0,
-		nil,
-	)
+	offsets := []vk.DeviceSize{0}
+	vertexBuffers := []vk.Buffer{a.shaderStorageBuffers[a.currentFrame]}
+	vk.CmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets)
 
-	vk.CmdDrawIndexed(commandBuffer, uint32(len(a.indices)), 1, 0, 0, 0)
+	vk.CmdDraw(commandBuffer, particleCount, 1, 0, 0)
 	vk.CmdEndRenderPass(commandBuffer)
 
-	if err := vk.Error(vk.EndCommandBuffer(commandBuffer)); err != nil {
-		return fmt.Errorf("recording commands to buffer failed: %w", err)
+	if res := vk.EndCommandBuffer(commandBuffer); res != vk.Success {
+		return fmt.Errorf("recording commands to buffer failed: %w", vk.Error(res))
 	}
 	return nil
 }
 
-func (a *VulkanTutorialApp) createSyncObjects() error {
+func (a *VulkanComputeApp) createSyncObjects() error {
 	semaphoreInfo := vk.SemaphoreCreateInfo{
 		SType: vk.StructureTypeSemaphoreCreateInfo,
 	}
@@ -2349,12 +1664,28 @@ func (a *VulkanTutorialApp) createSyncObjects() error {
 			return fmt.Errorf("failed to create inFlightFence: %w", err)
 		}
 		a.inFlightFences = append(a.inFlightFences, fence)
+
+		var computeFinishedSem vk.Semaphore
+		if err := vk.Error(
+			vk.CreateSemaphore(a.device, &semaphoreInfo, nil, &computeFinishedSem),
+		); err != nil {
+			return fmt.Errorf("failed to create computeFinishedSem: %w", err)
+		}
+		a.computeFinishedSems = append(a.computeFinishedSems, computeFinishedSem)
+
+		var computeFence vk.Fence
+		if err := vk.Error(
+			vk.CreateFence(a.device, &fenceInfo, nil, &computeFence),
+		); err != nil {
+			return fmt.Errorf("failed to create computeInFlightFences: %w", err)
+		}
+		a.computeInFlightFences = append(a.computeInFlightFences, computeFence)
 	}
 
 	return nil
 }
 
-func (a *VulkanTutorialApp) createInsance() error {
+func (a *VulkanComputeApp) createInsance() error {
 	if a.enableValidationLayers && !a.checkValidationSupport() {
 		return fmt.Errorf("validation layers requested but not available")
 	}
@@ -2392,7 +1723,7 @@ func (a *VulkanTutorialApp) createInsance() error {
 
 // findQueueFamilies returns a FamilyIndeces populated with Vulkan queue families needed
 // by the program.
-func (a *VulkanTutorialApp) findQueueFamilies(device vk.PhysicalDevice) queues.FamilyIndices {
+func (a *VulkanComputeApp) findQueueFamilies(device vk.PhysicalDevice) queues.FamilyIndices {
 	indices := queues.FamilyIndices{}
 
 	var queueFamilyCount uint32
@@ -2404,8 +1735,9 @@ func (a *VulkanTutorialApp) findQueueFamilies(device vk.PhysicalDevice) queues.F
 	for i, family := range queueFamilies {
 		family.Deref()
 
-		if family.QueueFlags&vk.QueueFlags(vk.QueueGraphicsBit) != 0 {
-			indices.Graphics.Set(uint32(i))
+		if family.QueueFlags&vk.QueueFlags(vk.QueueGraphicsBit) != 0 &&
+			family.QueueFlags&vk.QueueFlags(vk.QueueComputeBit) != 0 {
+			indices.GraphicsAndCompute.Set(uint32(i))
 		}
 
 		var hasPresent vk.Bool32
@@ -2426,7 +1758,7 @@ func (a *VulkanTutorialApp) findQueueFamilies(device vk.PhysicalDevice) queues.F
 	return indices
 }
 
-func (a *VulkanTutorialApp) querySwapChainSupport(
+func (a *VulkanComputeApp) querySwapChainSupport(
 	device vk.PhysicalDevice,
 ) swapChainSupportDetails {
 	details := swapChainSupportDetails{}
@@ -2479,7 +1811,7 @@ func (a *VulkanTutorialApp) querySwapChainSupport(
 
 // getDeviceScore returns how suitable is this device for the current program.
 // Bigger score means better. Zero or negative means the device cannot be used.
-func (a *VulkanTutorialApp) getDeviceScore(device vk.PhysicalDevice) uint32 {
+func (a *VulkanComputeApp) getDeviceScore(device vk.PhysicalDevice) uint32 {
 	var (
 		deviceScore uint32
 		properties  vk.PhysicalDeviceProperties
@@ -2509,7 +1841,7 @@ func (a *VulkanTutorialApp) getDeviceScore(device vk.PhysicalDevice) uint32 {
 	return deviceScore
 }
 
-func (a *VulkanTutorialApp) isDeviceSuitable(device vk.PhysicalDevice) bool {
+func (a *VulkanComputeApp) isDeviceSuitable(device vk.PhysicalDevice) bool {
 	indices := a.findQueueFamilies(device)
 	extensionsSupported := a.checkDeviceExtensionSupport(device)
 
@@ -2528,7 +1860,7 @@ func (a *VulkanTutorialApp) isDeviceSuitable(device vk.PhysicalDevice) bool {
 		supportedFeatures.SamplerAnisotropy.B()
 }
 
-func (a *VulkanTutorialApp) chooseSwapSurfaceFormat(
+func (a *VulkanComputeApp) chooseSwapSurfaceFormat(
 	availableFormats []vk.SurfaceFormat,
 ) vk.SurfaceFormat {
 	for _, format := range availableFormats {
@@ -2541,7 +1873,7 @@ func (a *VulkanTutorialApp) chooseSwapSurfaceFormat(
 	return availableFormats[0]
 }
 
-func (a *VulkanTutorialApp) chooseSwapPresentMode(
+func (a *VulkanComputeApp) chooseSwapPresentMode(
 	available []vk.PresentMode,
 ) vk.PresentMode {
 	if args.vsync {
@@ -2557,7 +1889,7 @@ func (a *VulkanTutorialApp) chooseSwapPresentMode(
 	return vk.PresentModeFifo
 }
 
-func (a *VulkanTutorialApp) chooseSwapExtend(
+func (a *VulkanComputeApp) chooseSwapExtend(
 	capabilities vk.SurfaceCapabilities,
 ) vk.Extent2D {
 	if capabilities.CurrentExtent.Width != math.MaxUint32 {
@@ -2588,7 +1920,7 @@ func (a *VulkanTutorialApp) chooseSwapExtend(
 	return actualExtend
 }
 
-func (a *VulkanTutorialApp) checkDeviceExtensionSupport(device vk.PhysicalDevice) bool {
+func (a *VulkanComputeApp) checkDeviceExtensionSupport(device vk.PhysicalDevice) bool {
 	var extensionsCount uint32
 	res := vk.EnumerateDeviceExtensionProperties(device, "", &extensionsCount, nil)
 	if err := vk.Error(res); err != nil {
@@ -2623,7 +1955,7 @@ func (a *VulkanTutorialApp) checkDeviceExtensionSupport(device vk.PhysicalDevice
 	return len(requiredExtensions) == 0
 }
 
-func (a *VulkanTutorialApp) checkValidationSupport() bool {
+func (a *VulkanComputeApp) checkValidationSupport() bool {
 	var count uint32
 	if vk.EnumerateInstanceLayerProperties(&count, nil) != vk.Success {
 		return false
@@ -2660,7 +1992,7 @@ func (a *VulkanTutorialApp) checkValidationSupport() bool {
 	return true
 }
 
-func (a *VulkanTutorialApp) createShaderModule(code []byte) (vk.ShaderModule, error) {
+func (a *VulkanComputeApp) createShaderModule(code []byte) (vk.ShaderModule, error) {
 	createInfo := vk.ShaderModuleCreateInfo{
 		SType:    vk.StructureTypeShaderModuleCreateInfo,
 		CodeSize: uint(len(code)),
@@ -2672,7 +2004,7 @@ func (a *VulkanTutorialApp) createShaderModule(code []byte) (vk.ShaderModule, er
 	return shaderModule, vk.Error(res)
 }
 
-func (a *VulkanTutorialApp) mainLoop() error {
+func (a *VulkanComputeApp) mainLoop() error {
 	log.Printf("main loop!\n")
 
 	for !a.window.ShouldClose() {
@@ -2689,16 +2021,53 @@ func (a *VulkanTutorialApp) mainLoop() error {
 	return nil
 }
 
-func (a *VulkanTutorialApp) drawFrame() error {
-	fences := []vk.Fence{a.inFlightFences[a.curentFrame]}
+func (a *VulkanComputeApp) drawFrame() error {
+	// Compute submission
+	computeFences := []vk.Fence{a.computeInFlightFences[a.currentFrame]}
+	vk.WaitForFences(a.device, 1, computeFences, vk.True, math.MaxUint64)
+
+	a.updateUniformBuffer(a.currentFrame)
+
+	vk.ResetFences(a.device, 1, computeFences)
+
+	computeCommandBuffer := a.computeCommandBuffers[a.currentFrame]
+	vk.ResetCommandBuffer(computeCommandBuffer, 0)
+
+	if err := a.recordComputeCommandBuffer(computeCommandBuffer); err != nil {
+		return fmt.Errorf("recording compute command buffer: %w", err)
+	}
+
+	computeSignalSemaphores := []vk.Semaphore{
+		a.computeFinishedSems[a.currentFrame],
+	}
+	submitInfo := vk.SubmitInfo{
+		SType:                vk.StructureTypeSubmitInfo,
+		CommandBufferCount:   1,
+		PCommandBuffers:      []vk.CommandBuffer{computeCommandBuffer},
+		SignalSemaphoreCount: uint32(len(computeSignalSemaphores)),
+		PSignalSemaphores:    computeSignalSemaphores,
+	}
+
+	res := vk.QueueSubmit(
+		a.computeQueue,
+		1,
+		[]vk.SubmitInfo{submitInfo},
+		a.computeInFlightFences[a.currentFrame],
+	)
+	if res != vk.Success {
+		return fmt.Errorf("failed to submit compute command buffer: %w", vk.Error(res))
+	}
+
+	// Graphics submission
+	fences := []vk.Fence{a.inFlightFences[a.currentFrame]}
 	vk.WaitForFences(a.device, 1, fences, vk.True, math.MaxUint64)
 
 	var imageIndex uint32
-	res := vk.AcquireNextImage(
+	res = vk.AcquireNextImage(
 		a.device,
 		a.swapChain,
 		math.MaxUint64,
-		a.imageAvailabmeSems[a.curentFrame],
+		a.imageAvailabmeSems[a.currentFrame],
 		vk.Fence(vk.NullHandle),
 		&imageIndex,
 	)
@@ -2712,26 +2081,31 @@ func (a *VulkanTutorialApp) drawFrame() error {
 	// Only reset the fence if we are submitting work.
 	vk.ResetFences(a.device, 1, fences)
 
-	commandBuffer := a.commandBuffers[a.curentFrame]
+	commandBuffer := a.commandBuffers[a.currentFrame]
 
 	vk.ResetCommandBuffer(commandBuffer, 0)
 	if err := a.recordCommandBuffer(commandBuffer, imageIndex); err != nil {
 		return fmt.Errorf("recording command buffer: %w", err)
 	}
 
-	a.updateUniformBuffer(a.curentFrame)
-
 	signalSemaphores := []vk.Semaphore{
-		a.renderFinishedSems[a.curentFrame],
+		a.renderFinishedSems[a.currentFrame],
 	}
 
-	submitInfo := vk.SubmitInfo{
-		SType:              vk.StructureTypeSubmitInfo,
-		WaitSemaphoreCount: 1,
-		PWaitSemaphores:    []vk.Semaphore{a.imageAvailabmeSems[a.curentFrame]},
-		PWaitDstStageMask: []vk.PipelineStageFlags{
-			vk.PipelineStageFlags(vk.PipelineStageColorAttachmentOutputBit),
-		},
+	waitSemaphores := []vk.Semaphore{
+		a.computeFinishedSems[a.currentFrame],
+		a.imageAvailabmeSems[a.currentFrame],
+	}
+	waitStages := []vk.PipelineStageFlags{
+		vk.PipelineStageFlags(vk.PipelineStageVertexInputBit),
+		vk.PipelineStageFlags(vk.PipelineStageColorAttachmentOutputBit),
+	}
+
+	submitInfo = vk.SubmitInfo{
+		SType:                vk.StructureTypeSubmitInfo,
+		WaitSemaphoreCount:   uint32(len(waitSemaphores)),
+		PWaitSemaphores:      waitSemaphores,
+		PWaitDstStageMask:    waitStages,
 		CommandBufferCount:   1,
 		PCommandBuffers:      []vk.CommandBuffer{commandBuffer},
 		PSignalSemaphores:    signalSemaphores,
@@ -2742,7 +2116,7 @@ func (a *VulkanTutorialApp) drawFrame() error {
 		a.graphicsQueue,
 		1,
 		[]vk.SubmitInfo{submitInfo},
-		a.inFlightFences[a.curentFrame],
+		a.inFlightFences[a.currentFrame],
 	)
 	if err := vk.Error(res); err != nil {
 		return fmt.Errorf("queue submit error: %w", err)
@@ -2769,73 +2143,53 @@ func (a *VulkanTutorialApp) drawFrame() error {
 		return fmt.Errorf("failed to present swap chain image: %w", vk.Error(res))
 	}
 
-	a.curentFrame = (a.curentFrame + 1) % maxFramesInFlight
+	a.currentFrame = (a.currentFrame + 1) % maxFramesInFlight
 	return nil
 }
 
-func (a *VulkanTutorialApp) updateUniformBuffer(currentImage uint32) {
-	frameTime := time.Since(a.startTime)
+func (a *VulkanComputeApp) updateUniformBuffer(currentImage uint32) {
+	now := time.Now()
 	ubo := UniformBufferObject{}
 
-	ubo.model.Identity()
-	ubo.model.RotateZ(&ubo.model, float32(frameTime.Seconds()))
-	ubo.view.LookAt(
-		&linmath.Vec3{2, 2, 2},
-		&linmath.Vec3{0, 0, 0},
-		&linmath.Vec3{0, 0, 1},
-	)
-
-	aspectR := float32(a.swapChainExtend.Width) / float32(a.swapChainExtend.Height)
-	ubo.proj.Perspective(45, aspectR, 0.1, 10)
-
-	ubo.proj[1][1] *= -1
+	ubo.deltaTime = float32(now.Sub(a.lastFrameTime).Seconds())
+	a.lastFrameTime = now
 
 	vk.Memcopy(a.uniformBuffersMapped[currentImage], unsafer.StructToBytes(&ubo))
 }
 
-func (a *VulkanTutorialApp) cleanup() error {
+func (a *VulkanComputeApp) cleanup() error {
 	return nil
 }
 
-type Vertex struct {
-	pos      linmath.Vec3
-	color    linmath.Vec3
-	texColor linmath.Vec2
+type Particle struct {
+	position linmath.Vec2
+	velocity linmath.Vec2
+	color    linmath.Vec4
 }
 
-func GetVertexSize() uint32 {
-	return uint32(unsafe.Sizeof(Vertex{}))
-}
-
-func GetVertexBindingDescription() vk.VertexInputBindingDescription {
+func GetParticleBindingDescription() vk.VertexInputBindingDescription {
 	bindingDescription := vk.VertexInputBindingDescription{
 		Binding:   0,
-		Stride:    GetVertexSize(),
+		Stride:    uint32(unsafe.Sizeof(Particle{})),
 		InputRate: vk.VertexInputRateVertex,
 	}
 
 	return bindingDescription
 }
 
-func GetVertexAttributeDescriptions() [3]vk.VertexInputAttributeDescription {
-	attrDescr := [3]vk.VertexInputAttributeDescription{
+func GetParticleAttributeDescriptions() [2]vk.VertexInputAttributeDescription {
+	attrDescr := [2]vk.VertexInputAttributeDescription{
 		{
 			Binding:  0,
 			Location: 0,
-			Format:   vk.FormatR32g32b32Sfloat,
-			Offset:   uint32(unsafe.Offsetof(Vertex{}.pos)),
+			Format:   vk.FormatR32g32Sfloat,
+			Offset:   uint32(unsafe.Offsetof(Particle{}.position)),
 		},
 		{
 			Binding:  0,
 			Location: 1,
-			Format:   vk.FormatR32g32b32Sfloat,
-			Offset:   uint32(unsafe.Offsetof(Vertex{}.color)),
-		},
-		{
-			Binding:  0,
-			Location: 2,
-			Format:   vk.FormatR32g32Sfloat,
-			Offset:   uint32(unsafe.Offsetof(Vertex{}.texColor)),
+			Format:   vk.FormatR32g32b32a32Sfloat,
+			Offset:   uint32(unsafe.Offsetof(Particle{}.color)),
 		},
 	}
 
@@ -2851,9 +2205,7 @@ type swapChainSupportDetails struct {
 }
 
 type UniformBufferObject struct {
-	model linmath.Mat4x4
-	view  linmath.Mat4x4
-	proj  linmath.Mat4x4
+	deltaTime float32
 }
 
 func clamp[T cmp.Ordered](val, min, max T) T {

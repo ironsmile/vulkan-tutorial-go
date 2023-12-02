@@ -9,4 +9,5 @@ import "embed"
 //
 //go:embed frag.spv
 //go:embed vert.spv
+//go:embed comp.spv
 var FS embed.FS

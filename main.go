@@ -42,14 +42,14 @@ var args struct {
 }
 
 const (
-	title             = "Vulkan Tutorial: Hello Triangle"
+	title             = "Vulkan Tutorial: Viking Room"
 	maxFramesInFlight = 2
 )
 
 func main() {
 	flag.Parse()
 
-	app := &HelloTriangleApp{
+	app := &VulkanTutorialApp{
 		width:       1024,
 		height:      768,
 		modelPath:   "models/viking_room.obj",
@@ -86,8 +86,8 @@ func main() {
 	}
 }
 
-// HelloTriangleApp is the first program from vulkan-tutorial.com
-type HelloTriangleApp struct {
+// VulkanTutorialApp is the first program from vulkan-tutorial.com
+type VulkanTutorialApp struct {
 	width  int
 	height int
 
@@ -170,29 +170,29 @@ type HelloTriangleApp struct {
 }
 
 // Run runs the vulkan program.
-func (h *HelloTriangleApp) Run() error {
-	if err := h.initWindow(); err != nil {
+func (a *VulkanTutorialApp) Run() error {
+	if err := a.initWindow(); err != nil {
 		return fmt.Errorf("initWindow: %w", err)
 	}
-	defer h.cleanWindow()
+	defer a.cleanWindow()
 
-	if err := h.initVulkan(); err != nil {
+	if err := a.initVulkan(); err != nil {
 		return fmt.Errorf("initVulkan: %w", err)
 	}
-	defer h.cleanupVulkan()
+	defer a.cleanupVulkan()
 
-	if err := h.mainLoop(); err != nil {
+	if err := a.mainLoop(); err != nil {
 		return fmt.Errorf("mainLoop: %w", err)
 	}
 
-	if err := h.cleanup(); err != nil {
+	if err := a.cleanup(); err != nil {
 		return fmt.Errorf("cleanup: %w", err)
 	}
 
 	return nil
 }
 
-func (h *HelloTriangleApp) initWindow() error {
+func (a *VulkanTutorialApp) initWindow() error {
 	if err := glfw.Init(); err != nil {
 		return fmt.Errorf("glfw.Init: %w", err)
 	}
@@ -200,242 +200,242 @@ func (h *HelloTriangleApp) initWindow() error {
 	glfw.WindowHint(glfw.ClientAPI, glfw.NoAPI)
 	// glfw.WindowHint(glfw.Resizable, glfw.False)
 
-	window, err := glfw.CreateWindow(h.width, h.height, title, nil, nil)
+	window, err := glfw.CreateWindow(a.width, a.height, title, nil, nil)
 	if err != nil {
 		return fmt.Errorf("creating window: %w", err)
 	}
 
-	window.SetFramebufferSizeCallback(h.frameBufferResizeCallback)
+	window.SetFramebufferSizeCallback(a.frameBufferResizeCallback)
 
-	h.window = window
+	a.window = window
 	return nil
 }
 
-func (h *HelloTriangleApp) frameBufferResizeCallback(
+func (a *VulkanTutorialApp) frameBufferResizeCallback(
 	w *glfw.Window,
 	width int,
 	height int,
 ) {
-	h.frameBufferResized = true
+	a.frameBufferResized = true
 }
 
-func (h *HelloTriangleApp) cleanWindow() {
-	h.window.Destroy()
+func (a *VulkanTutorialApp) cleanWindow() {
+	a.window.Destroy()
 	glfw.Terminate()
 }
 
-func (h *HelloTriangleApp) initVulkan() error {
+func (a *VulkanTutorialApp) initVulkan() error {
 	vk.SetGetInstanceProcAddr(glfw.GetVulkanGetInstanceProcAddress())
 
 	if err := vk.Init(); err != nil {
 		return fmt.Errorf("failed to init Vulkan Go: %w", err)
 	}
 
-	if err := h.createInsance(); err != nil {
+	if err := a.createInsance(); err != nil {
 		return fmt.Errorf("createInstance: %w", err)
 	}
 
-	if err := h.createSurface(); err != nil {
+	if err := a.createSurface(); err != nil {
 		return fmt.Errorf("createSurface: %w", err)
 	}
 
-	if err := h.pickPhysicalDevice(); err != nil {
+	if err := a.pickPhysicalDevice(); err != nil {
 		return fmt.Errorf("pickPhysicalDevice: %w", err)
 	}
 
-	if err := h.createLogicalDevice(); err != nil {
+	if err := a.createLogicalDevice(); err != nil {
 		return fmt.Errorf("createLogicalDevice: %w", err)
 	}
 
-	if err := h.createSwapChain(); err != nil {
+	if err := a.createSwapChain(); err != nil {
 		return fmt.Errorf("createSwapChain: %w", err)
 	}
 
-	if err := h.createImageViews(); err != nil {
+	if err := a.createImageViews(); err != nil {
 		return fmt.Errorf("createImageViews: %w", err)
 	}
 
-	if err := h.createRenderPass(); err != nil {
+	if err := a.createRenderPass(); err != nil {
 		return fmt.Errorf("createRenderPass: %w", err)
 	}
 
-	if err := h.createDescriptorSetLayout(); err != nil {
+	if err := a.createDescriptorSetLayout(); err != nil {
 		return fmt.Errorf("createDescriptorSetLayout: %w", err)
 	}
 
-	if err := h.createGraphicsPipeline(); err != nil {
+	if err := a.createGraphicsPipeline(); err != nil {
 		return fmt.Errorf("createGraphicsPipeline: %w", err)
 	}
 
-	if err := h.createCommandPool(); err != nil {
+	if err := a.createCommandPool(); err != nil {
 		return fmt.Errorf("createCommandPool: %w", err)
 	}
 
-	if err := h.createDepthResources(); err != nil {
+	if err := a.createDepthResources(); err != nil {
 		return fmt.Errorf("createDepthResources: %w", err)
 	}
 
-	if err := h.createFramebuffers(); err != nil {
+	if err := a.createFramebuffers(); err != nil {
 		return fmt.Errorf("createFramebuffers: %w", err)
 	}
 
-	if err := h.createTextureImage(); err != nil {
+	if err := a.createTextureImage(); err != nil {
 		return fmt.Errorf("createTextureImage: %w", err)
 	}
 
-	if err := h.createTextureImageView(); err != nil {
+	if err := a.createTextureImageView(); err != nil {
 		return fmt.Errorf("createTextureImageView: %w", err)
 	}
 
-	if err := h.createTextureSampler(); err != nil {
+	if err := a.createTextureSampler(); err != nil {
 		return fmt.Errorf("createTextureSampler: %w", err)
 	}
 
-	if err := h.loadModel(); err != nil {
+	if err := a.loadModel(); err != nil {
 		return fmt.Errorf("loadModel: %w", err)
 	}
 
-	if err := h.createVertexBuffer(); err != nil {
+	if err := a.createVertexBuffer(); err != nil {
 		return fmt.Errorf("createVertexBuffer: %w", err)
 	}
 
-	if err := h.createIndexBuffer(); err != nil {
+	if err := a.createIndexBuffer(); err != nil {
 		return fmt.Errorf("createIndexBuffer: %w", err)
 	}
 
-	if err := h.createUniformBuffers(); err != nil {
+	if err := a.createUniformBuffers(); err != nil {
 		return fmt.Errorf("createUniformBuffers: %w", err)
 	}
 
-	if err := h.createDescriptorPool(); err != nil {
+	if err := a.createDescriptorPool(); err != nil {
 		return fmt.Errorf("createDescriptorPool: %w", err)
 	}
 
-	if err := h.createDescriptorSets(); err != nil {
+	if err := a.createDescriptorSets(); err != nil {
 		return fmt.Errorf("createDescriptorSets: %w", err)
 	}
 
-	if err := h.createCommandBuffer(); err != nil {
+	if err := a.createCommandBuffer(); err != nil {
 		return fmt.Errorf("createCommandBuffer: %w", err)
 	}
 
-	if err := h.createSyncObjects(); err != nil {
+	if err := a.createSyncObjects(); err != nil {
 		return fmt.Errorf("createSyncObjects: %w", err)
 	}
 
 	return nil
 }
 
-func (h *HelloTriangleApp) cleanupVulkan() {
+func (a *VulkanTutorialApp) cleanupVulkan() {
 	for i := 0; i < maxFramesInFlight; i++ {
-		vk.DestroySemaphore(h.device, h.imageAvailabmeSems[i], nil)
-		vk.DestroySemaphore(h.device, h.renderFinishedSems[i], nil)
-		vk.DestroyFence(h.device, h.inFlightFences[i], nil)
+		vk.DestroySemaphore(a.device, a.imageAvailabmeSems[i], nil)
+		vk.DestroySemaphore(a.device, a.renderFinishedSems[i], nil)
+		vk.DestroyFence(a.device, a.inFlightFences[i], nil)
 	}
 
-	vk.DestroyCommandPool(h.device, h.commandPool, nil)
+	vk.DestroyCommandPool(a.device, a.commandPool, nil)
 
-	vk.DestroyPipeline(h.device, h.graphicsPipline, nil)
-	vk.DestroyPipelineLayout(h.device, h.pipelineLayout, nil)
+	vk.DestroyPipeline(a.device, a.graphicsPipline, nil)
+	vk.DestroyPipelineLayout(a.device, a.pipelineLayout, nil)
 
-	h.cleanupSwapChain()
+	a.cleanupSwapChain()
 
-	if h.textureSampler != vk.NullSampler {
-		vk.DestroySampler(h.device, h.textureSampler, nil)
-	}
-
-	if h.textureImageView != vk.NullImageView {
-		vk.DestroyImageView(h.device, h.textureImageView, nil)
+	if a.textureSampler != vk.NullSampler {
+		vk.DestroySampler(a.device, a.textureSampler, nil)
 	}
 
-	if h.textureImage != vk.NullImage {
-		vk.DestroyImage(h.device, h.textureImage, nil)
-	}
-	if h.textureImageMemory != vk.NullDeviceMemory {
-		vk.FreeMemory(h.device, h.textureImageMemory, nil)
+	if a.textureImageView != vk.NullImageView {
+		vk.DestroyImageView(a.device, a.textureImageView, nil)
 	}
 
-	for _, buffer := range h.uniformBuffers {
-		vk.DestroyBuffer(h.device, buffer, nil)
+	if a.textureImage != vk.NullImage {
+		vk.DestroyImage(a.device, a.textureImage, nil)
 	}
-	for _, bufferMem := range h.uniformBuffersMemory {
-		vk.FreeMemory(h.device, bufferMem, nil)
-	}
-
-	if h.descriptorPool != vk.NullDescriptorPool {
-		vk.DestroyDescriptorPool(h.device, h.descriptorPool, nil)
+	if a.textureImageMemory != vk.NullDeviceMemory {
+		vk.FreeMemory(a.device, a.textureImageMemory, nil)
 	}
 
-	if h.descriptorSetLayout != vk.NullDescriptorSetLayout {
-		vk.DestroyDescriptorSetLayout(h.device, h.descriptorSetLayout, nil)
+	for _, buffer := range a.uniformBuffers {
+		vk.DestroyBuffer(a.device, buffer, nil)
+	}
+	for _, bufferMem := range a.uniformBuffersMemory {
+		vk.FreeMemory(a.device, bufferMem, nil)
 	}
 
-	if h.vertexBuffer != vk.NullBuffer {
-		vk.DestroyBuffer(h.device, h.vertexBuffer, nil)
-	}
-	if h.vertexBufferMemory != vk.NullDeviceMemory {
-		vk.FreeMemory(h.device, h.vertexBufferMemory, nil)
+	if a.descriptorPool != vk.NullDescriptorPool {
+		vk.DestroyDescriptorPool(a.device, a.descriptorPool, nil)
 	}
 
-	if h.indexBuffer != vk.NullBuffer {
-		vk.DestroyBuffer(h.device, h.indexBuffer, nil)
-	}
-	if h.indexBufferMemory != vk.NullDeviceMemory {
-		vk.FreeMemory(h.device, h.indexBufferMemory, nil)
+	if a.descriptorSetLayout != vk.NullDescriptorSetLayout {
+		vk.DestroyDescriptorSetLayout(a.device, a.descriptorSetLayout, nil)
 	}
 
-	vk.DestroyRenderPass(h.device, h.renderPass, nil)
+	if a.vertexBuffer != vk.NullBuffer {
+		vk.DestroyBuffer(a.device, a.vertexBuffer, nil)
+	}
+	if a.vertexBufferMemory != vk.NullDeviceMemory {
+		vk.FreeMemory(a.device, a.vertexBufferMemory, nil)
+	}
 
-	if h.device != vk.Device(vk.NullHandle) {
-		vk.DestroyDevice(h.device, nil)
+	if a.indexBuffer != vk.NullBuffer {
+		vk.DestroyBuffer(a.device, a.indexBuffer, nil)
 	}
-	if h.surface != vk.NullSurface {
-		vk.DestroySurface(h.instance, h.surface, nil)
+	if a.indexBufferMemory != vk.NullDeviceMemory {
+		vk.FreeMemory(a.device, a.indexBufferMemory, nil)
 	}
-	vk.DestroyInstance(h.instance, nil)
+
+	vk.DestroyRenderPass(a.device, a.renderPass, nil)
+
+	if a.device != vk.Device(vk.NullHandle) {
+		vk.DestroyDevice(a.device, nil)
+	}
+	if a.surface != vk.NullSurface {
+		vk.DestroySurface(a.instance, a.surface, nil)
+	}
+	vk.DestroyInstance(a.instance, nil)
 }
 
-func (h *HelloTriangleApp) cleanupSwapChain() {
-	if h.depthImageView != vk.NullImageView {
-		vk.DestroyImageView(h.device, h.depthImageView, nil)
+func (a *VulkanTutorialApp) cleanupSwapChain() {
+	if a.depthImageView != vk.NullImageView {
+		vk.DestroyImageView(a.device, a.depthImageView, nil)
 	}
 
-	if h.depthImage != vk.NullImage {
-		vk.DestroyImage(h.device, h.depthImage, nil)
+	if a.depthImage != vk.NullImage {
+		vk.DestroyImage(a.device, a.depthImage, nil)
 	}
 
-	if h.depthImageMemory != vk.NullDeviceMemory {
-		vk.FreeMemory(h.device, h.depthImageMemory, nil)
+	if a.depthImageMemory != vk.NullDeviceMemory {
+		vk.FreeMemory(a.device, a.depthImageMemory, nil)
 	}
 
-	for _, frameBuffer := range h.swapChainFramebuffers {
-		vk.DestroyFramebuffer(h.device, frameBuffer, nil)
+	for _, frameBuffer := range a.swapChainFramebuffers {
+		vk.DestroyFramebuffer(a.device, frameBuffer, nil)
 	}
 
-	for _, imageView := range h.swapChainImageViews {
-		vk.DestroyImageView(h.device, imageView, nil)
+	for _, imageView := range a.swapChainImageViews {
+		vk.DestroyImageView(a.device, imageView, nil)
 	}
 
-	if h.swapChain != vk.NullSwapchain {
-		vk.DestroySwapchain(h.device, h.swapChain, nil)
+	if a.swapChain != vk.NullSwapchain {
+		vk.DestroySwapchain(a.device, a.swapChain, nil)
 	}
-	h.swapChainImages = nil
-	h.swapChainImageViews = nil
+	a.swapChainImages = nil
+	a.swapChainImageViews = nil
 }
 
-func (h *HelloTriangleApp) createSurface() error {
-	surfacePtr, err := h.window.CreateWindowSurface(h.instance, nil)
+func (a *VulkanTutorialApp) createSurface() error {
+	surfacePtr, err := a.window.CreateWindowSurface(a.instance, nil)
 	if err != nil {
 		return fmt.Errorf("cannot create surface within GLFW window: %w", err)
 	}
 
-	h.surface = vk.SurfaceFromPointer(surfacePtr)
+	a.surface = vk.SurfaceFromPointer(surfacePtr)
 	return nil
 }
 
-func (h *HelloTriangleApp) pickPhysicalDevice() error {
+func (a *VulkanTutorialApp) pickPhysicalDevice() error {
 	var deviceCount uint32
-	err := vk.Error(vk.EnumeratePhysicalDevices(h.instance, &deviceCount, nil))
+	err := vk.Error(vk.EnumeratePhysicalDevices(a.instance, &deviceCount, nil))
 	if err != nil {
 		return fmt.Errorf("failed to get the number of physical devices: %w", err)
 	}
@@ -444,7 +444,7 @@ func (h *HelloTriangleApp) pickPhysicalDevice() error {
 	}
 
 	pDevices := make([]vk.PhysicalDevice, deviceCount)
-	err = vk.Error(vk.EnumeratePhysicalDevices(h.instance, &deviceCount, pDevices))
+	err = vk.Error(vk.EnumeratePhysicalDevices(a.instance, &deviceCount, pDevices))
 	if err != nil {
 		return fmt.Errorf("failed to enumerate the physical devices: %w", err)
 	}
@@ -455,7 +455,7 @@ func (h *HelloTriangleApp) pickPhysicalDevice() error {
 	)
 
 	for _, device := range pDevices {
-		deviceScore := h.getDeviceScore(device)
+		deviceScore := a.getDeviceScore(device)
 
 		if deviceScore > score {
 			selectedDevice = device
@@ -467,12 +467,12 @@ func (h *HelloTriangleApp) pickPhysicalDevice() error {
 		return fmt.Errorf("failed to find suitable physical devices")
 	}
 
-	h.physicalDevice = selectedDevice
+	a.physicalDevice = selectedDevice
 	return nil
 }
 
-func (h *HelloTriangleApp) createLogicalDevice() error {
-	indices := h.findQueueFamilies(h.physicalDevice)
+func (a *VulkanTutorialApp) createLogicalDevice() error {
+	indices := a.findQueueFamilies(a.physicalDevice)
 	if !indices.IsComplete() {
 		return fmt.Errorf("createLogicalDevice called for physical device which does " +
 			"have all the queues required by the program")
@@ -507,39 +507,39 @@ func (h *HelloTriangleApp) createLogicalDevice() error {
 		PQueueCreateInfos:    queueCreateInfos,
 		QueueCreateInfoCount: uint32(len(queueCreateInfos)),
 
-		EnabledExtensionCount:   uint32(len(h.deviceExtensions)),
-		PpEnabledExtensionNames: h.deviceExtensions,
+		EnabledExtensionCount:   uint32(len(a.deviceExtensions)),
+		PpEnabledExtensionNames: a.deviceExtensions,
 	}
 
-	if h.enableValidationLayers {
-		createInfo.PpEnabledLayerNames = h.validationLayers
-		createInfo.EnabledLayerCount = uint32(len(h.validationLayers))
+	if a.enableValidationLayers {
+		createInfo.PpEnabledLayerNames = a.validationLayers
+		createInfo.EnabledLayerCount = uint32(len(a.validationLayers))
 	}
 
 	var device vk.Device
-	err := vk.Error(vk.CreateDevice(h.physicalDevice, &createInfo, nil, &device))
+	err := vk.Error(vk.CreateDevice(a.physicalDevice, &createInfo, nil, &device))
 	if err != nil {
 		return fmt.Errorf("failed to create logical device: %w", err)
 	}
-	h.device = device
+	a.device = device
 
 	var graphicsQueue vk.Queue
-	vk.GetDeviceQueue(h.device, indices.Graphics.Get(), 0, &graphicsQueue)
-	h.graphicsQueue = graphicsQueue
+	vk.GetDeviceQueue(a.device, indices.Graphics.Get(), 0, &graphicsQueue)
+	a.graphicsQueue = graphicsQueue
 
 	var presentQueue vk.Queue
-	vk.GetDeviceQueue(h.device, indices.Present.Get(), 0, &presentQueue)
-	h.presentQueue = presentQueue
+	vk.GetDeviceQueue(a.device, indices.Present.Get(), 0, &presentQueue)
+	a.presentQueue = presentQueue
 
 	return nil
 }
 
-func (h *HelloTriangleApp) createSwapChain() error {
-	swapChainSupport := h.querySwapChainSupport(h.physicalDevice)
+func (a *VulkanTutorialApp) createSwapChain() error {
+	swapChainSupport := a.querySwapChainSupport(a.physicalDevice)
 
-	surfaceFormat := h.chooseSwapSurfaceFormat(swapChainSupport.formats)
-	presentMode := h.chooseSwapPresentMode(swapChainSupport.presentModes)
-	extend := h.chooseSwapExtend(swapChainSupport.capabilities)
+	surfaceFormat := a.chooseSwapSurfaceFormat(swapChainSupport.formats)
+	presentMode := a.chooseSwapPresentMode(swapChainSupport.presentModes)
+	extend := a.chooseSwapExtend(swapChainSupport.capabilities)
 
 	imageCount := swapChainSupport.capabilities.MinImageCount + 1
 	if swapChainSupport.capabilities.MaxImageCount > 0 &&
@@ -549,7 +549,7 @@ func (h *HelloTriangleApp) createSwapChain() error {
 
 	createInfo := vk.SwapchainCreateInfo{
 		SType:            vk.StructureTypeSwapchainCreateInfo,
-		Surface:          h.surface,
+		Surface:          a.surface,
 		MinImageCount:    imageCount,
 		ImageColorSpace:  surfaceFormat.ColorSpace,
 		ImageFormat:      surfaceFormat.Format,
@@ -562,7 +562,7 @@ func (h *HelloTriangleApp) createSwapChain() error {
 		Clipped:          vk.True,
 	}
 
-	indices := h.findQueueFamilies(h.physicalDevice)
+	indices := a.findQueueFamilies(a.physicalDevice)
 	if indices.Graphics.Get() != indices.Present.Get() {
 		createInfo.ImageSharingMode = vk.SharingModeConcurrent
 		createInfo.QueueFamilyIndexCount = 2
@@ -575,29 +575,29 @@ func (h *HelloTriangleApp) createSwapChain() error {
 	}
 
 	var swapChain vk.Swapchain
-	res := vk.CreateSwapchain(h.device, &createInfo, nil, &swapChain)
+	res := vk.CreateSwapchain(a.device, &createInfo, nil, &swapChain)
 	if err := vk.Error(res); err != nil {
 		return fmt.Errorf("failed to create swap chain: %w", err)
 	}
-	h.swapChain = swapChain
+	a.swapChain = swapChain
 
 	var imagesCount uint32
-	vk.GetSwapchainImages(h.device, h.swapChain, &imagesCount, nil)
+	vk.GetSwapchainImages(a.device, a.swapChain, &imagesCount, nil)
 
 	images := make([]vk.Image, imagesCount)
-	vk.GetSwapchainImages(h.device, h.swapChain, &imagesCount, images)
+	vk.GetSwapchainImages(a.device, a.swapChain, &imagesCount, images)
 
-	h.swapChainImages = images
+	a.swapChainImages = images
 
-	h.swapChainImageFormat = surfaceFormat.Format
-	h.swapChainExtend = extend
+	a.swapChainImageFormat = surfaceFormat.Format
+	a.swapChainExtend = extend
 
 	return nil
 }
 
-func (h *HelloTriangleApp) recreateSwapChain() error {
+func (a *VulkanTutorialApp) recreateSwapChain() error {
 	for true {
-		width, height := h.window.GetFramebufferSize()
+		width, height := a.window.GetFramebufferSize()
 		if width != 0 || height != 0 {
 			break
 		}
@@ -605,46 +605,46 @@ func (h *HelloTriangleApp) recreateSwapChain() error {
 		glfw.WaitEvents()
 	}
 
-	vk.DeviceWaitIdle(h.device)
+	vk.DeviceWaitIdle(a.device)
 
-	h.cleanupSwapChain()
+	a.cleanupSwapChain()
 
-	if err := h.createSwapChain(); err != nil {
+	if err := a.createSwapChain(); err != nil {
 		return fmt.Errorf("createSwapChain: %w", err)
 	}
-	if err := h.createImageViews(); err != nil {
+	if err := a.createImageViews(); err != nil {
 		return fmt.Errorf("createImageViews: %w", err)
 	}
-	if err := h.createDepthResources(); err != nil {
+	if err := a.createDepthResources(); err != nil {
 		return fmt.Errorf("createDepthResources: %w", err)
 	}
-	if err := h.createFramebuffers(); err != nil {
+	if err := a.createFramebuffers(); err != nil {
 		return fmt.Errorf("createFramebuffers: %w", err)
 	}
 
 	return nil
 }
 
-func (h *HelloTriangleApp) createImageViews() error {
-	for i, swapChainImage := range h.swapChainImages {
+func (a *VulkanTutorialApp) createImageViews() error {
+	for i, swapChainImage := range a.swapChainImages {
 		swapChainImage := swapChainImage
-		imageView, err := h.createImageView(
+		imageView, err := a.createImageView(
 			swapChainImage,
-			h.swapChainImageFormat,
+			a.swapChainImageFormat,
 			vk.ImageAspectFlags(vk.ImageAspectColorBit),
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create image %d: %w", i, err)
 		}
 
-		h.swapChainImageViews = append(h.swapChainImageViews, imageView)
+		a.swapChainImageViews = append(a.swapChainImageViews, imageView)
 	}
 
 	return nil
 }
 
-func (h *HelloTriangleApp) createRenderPass() error {
-	depthFormat, err := h.findDepthFormat()
+func (a *VulkanTutorialApp) createRenderPass() error {
+	depthFormat, err := a.findDepthFormat()
 	if err != nil {
 		return fmt.Errorf("cannot find suitable depth image format: %w", err)
 	}
@@ -666,7 +666,7 @@ func (h *HelloTriangleApp) createRenderPass() error {
 	}
 
 	colorAttachment := vk.AttachmentDescription{
-		Format:         h.swapChainImageFormat,
+		Format:         a.swapChainImageFormat,
 		Samples:        vk.SampleCount1Bit,
 		LoadOp:         vk.AttachmentLoadOpClear,
 		StoreOp:        vk.AttachmentStoreOpStore,
@@ -716,16 +716,16 @@ func (h *HelloTriangleApp) createRenderPass() error {
 	}
 
 	var renderPass vk.RenderPass
-	res := vk.CreateRenderPass(h.device, &rederPassInfo, nil, &renderPass)
+	res := vk.CreateRenderPass(a.device, &rederPassInfo, nil, &renderPass)
 	if err := vk.Error(res); err != nil {
 		return fmt.Errorf("failed to create render pass: %w", err)
 	}
-	h.renderPass = renderPass
+	a.renderPass = renderPass
 
 	return nil
 }
 
-func (h *HelloTriangleApp) createDescriptorSetLayout() error {
+func (a *VulkanTutorialApp) createDescriptorSetLayout() error {
 	uboLayoutBinding := vk.DescriptorSetLayoutBinding{
 		Binding:            0,
 		DescriptorType:     vk.DescriptorTypeUniformBuffer,
@@ -754,16 +754,16 @@ func (h *HelloTriangleApp) createDescriptorSetLayout() error {
 	}
 
 	var descriptorSetLayout vk.DescriptorSetLayout
-	res := vk.CreateDescriptorSetLayout(h.device, &layoutInfo, nil, &descriptorSetLayout)
+	res := vk.CreateDescriptorSetLayout(a.device, &layoutInfo, nil, &descriptorSetLayout)
 	if res != vk.Success {
 		return fmt.Errorf("creating descriptor set layout: %w", vk.Error(res))
 	}
-	h.descriptorSetLayout = descriptorSetLayout
+	a.descriptorSetLayout = descriptorSetLayout
 
 	return nil
 }
 
-func (h *HelloTriangleApp) createGraphicsPipeline() error {
+func (a *VulkanTutorialApp) createGraphicsPipeline() error {
 	vertShaderCode, err := shaders.FS.ReadFile("vert.spv")
 	if err != nil {
 		return fmt.Errorf("failed to read vertex shader bytecode: %w", err)
@@ -779,17 +779,17 @@ func (h *HelloTriangleApp) createGraphicsPipeline() error {
 		log.Printf("fragment shader code size: %d", len(fragShaderCode))
 	}
 
-	vertexShaderModule, err := h.createShaderModule(vertShaderCode)
+	vertexShaderModule, err := a.createShaderModule(vertShaderCode)
 	if err != nil {
 		return fmt.Errorf("creating vertex shader module: %w", err)
 	}
-	defer vk.DestroyShaderModule(h.device, vertexShaderModule, nil)
+	defer vk.DestroyShaderModule(a.device, vertexShaderModule, nil)
 
-	fragmentShaderModule, err := h.createShaderModule(fragShaderCode)
+	fragmentShaderModule, err := a.createShaderModule(fragShaderCode)
 	if err != nil {
 		return fmt.Errorf("creating fragment shader module: %w", err)
 	}
-	defer vk.DestroyShaderModule(h.device, fragmentShaderModule, nil)
+	defer vk.DestroyShaderModule(a.device, fragmentShaderModule, nil)
 
 	vertShaderStageInfo := vk.PipelineShaderStageCreateInfo{
 		SType:  vk.StructureTypePipelineShaderStageCreateInfo,
@@ -832,15 +832,15 @@ func (h *HelloTriangleApp) createGraphicsPipeline() error {
 	viewport := vk.Viewport{
 		X:        0,
 		Y:        0,
-		Width:    float32(h.swapChainExtend.Width),
-		Height:   float32(h.swapChainExtend.Height),
+		Width:    float32(a.swapChainExtend.Width),
+		Height:   float32(a.swapChainExtend.Height),
 		MinDepth: 0,
 		MaxDepth: 1,
 	}
 
 	scissor := vk.Rect2D{
 		Offset: vk.Offset2D{X: 0, Y: 0},
-		Extent: h.swapChainExtend,
+		Extent: a.swapChainExtend,
 	}
 
 	dynamicStates := []vk.DynamicState{
@@ -911,15 +911,15 @@ func (h *HelloTriangleApp) createGraphicsPipeline() error {
 	pipelineLayoutInfo := vk.PipelineLayoutCreateInfo{
 		SType:          vk.StructureTypePipelineLayoutCreateInfo,
 		SetLayoutCount: 1,
-		PSetLayouts:    []vk.DescriptorSetLayout{h.descriptorSetLayout},
+		PSetLayouts:    []vk.DescriptorSetLayout{a.descriptorSetLayout},
 	}
 
 	var pipelineLayout vk.PipelineLayout
-	res := vk.CreatePipelineLayout(h.device, &pipelineLayoutInfo, nil, &pipelineLayout)
+	res := vk.CreatePipelineLayout(a.device, &pipelineLayoutInfo, nil, &pipelineLayout)
 	if err := vk.Error(res); err != nil {
 		return fmt.Errorf("failed to create pipeline layout: %w", err)
 	}
-	h.pipelineLayout = pipelineLayout
+	a.pipelineLayout = pipelineLayout
 
 	depthStencil := vk.PipelineDepthStencilStateCreateInfo{
 		SType:                 vk.StructureTypePipelineDepthStencilStateCreateInfo,
@@ -944,8 +944,8 @@ func (h *HelloTriangleApp) createGraphicsPipeline() error {
 		PDepthStencilState:  &depthStencil,
 		PColorBlendState:    &colorBlending,
 		PDynamicState:       &dynamicState,
-		Layout:              h.pipelineLayout,
-		RenderPass:          h.renderPass,
+		Layout:              a.pipelineLayout,
+		RenderPass:          a.renderPass,
 		Subpass:             0,
 		BasePipelineHandle:  vk.Pipeline(vk.NullHandle),
 		BasePipelineIndex:   -1,
@@ -953,7 +953,7 @@ func (h *HelloTriangleApp) createGraphicsPipeline() error {
 
 	pipelines := make([]vk.Pipeline, 1)
 	res = vk.CreateGraphicsPipelines(
-		h.device,
+		a.device,
 		vk.PipelineCache(vk.NullHandle),
 		1,
 		[]vk.GraphicsPipelineCreateInfo{pipelineInfo},
@@ -963,46 +963,46 @@ func (h *HelloTriangleApp) createGraphicsPipeline() error {
 	if err := vk.Error(res); err != nil {
 		return fmt.Errorf("failed to create graphics pipeline: %w", err)
 	}
-	h.graphicsPipline = pipelines[0]
+	a.graphicsPipline = pipelines[0]
 
 	return nil
 }
 
-func (h *HelloTriangleApp) createFramebuffers() error {
-	h.swapChainFramebuffers = make([]vk.Framebuffer, len(h.swapChainImageViews))
+func (a *VulkanTutorialApp) createFramebuffers() error {
+	a.swapChainFramebuffers = make([]vk.Framebuffer, len(a.swapChainImageViews))
 
-	for i, swapChainView := range h.swapChainImageViews {
+	for i, swapChainView := range a.swapChainImageViews {
 		swapChainView := swapChainView
 
 		attachments := []vk.ImageView{
 			swapChainView,
-			h.depthImageView,
+			a.depthImageView,
 		}
 
 		frameBufferInfo := vk.FramebufferCreateInfo{
 			SType:           vk.StructureTypeFramebufferCreateInfo,
-			RenderPass:      h.renderPass,
+			RenderPass:      a.renderPass,
 			AttachmentCount: uint32(len(attachments)),
 			PAttachments:    attachments,
-			Width:           h.swapChainExtend.Width,
-			Height:          h.swapChainExtend.Height,
+			Width:           a.swapChainExtend.Width,
+			Height:          a.swapChainExtend.Height,
 			Layers:          1,
 		}
 
 		var frameBuffer vk.Framebuffer
-		res := vk.CreateFramebuffer(h.device, &frameBufferInfo, nil, &frameBuffer)
+		res := vk.CreateFramebuffer(a.device, &frameBufferInfo, nil, &frameBuffer)
 		if err := vk.Error(res); err != nil {
 			return fmt.Errorf("failed to create frame buffer %d: %w", i, err)
 		}
 
-		h.swapChainFramebuffers[i] = frameBuffer
+		a.swapChainFramebuffers[i] = frameBuffer
 	}
 
 	return nil
 }
 
-func (h *HelloTriangleApp) createCommandPool() error {
-	queueFamilyIndices := h.findQueueFamilies(h.physicalDevice)
+func (a *VulkanTutorialApp) createCommandPool() error {
+	queueFamilyIndices := a.findQueueFamilies(a.physicalDevice)
 	poolInfo := vk.CommandPoolCreateInfo{
 		SType: vk.StructureTypeCommandPoolCreateInfo,
 		Flags: vk.CommandPoolCreateFlags(
@@ -1012,17 +1012,17 @@ func (h *HelloTriangleApp) createCommandPool() error {
 	}
 
 	var commandPool vk.CommandPool
-	res := vk.CreateCommandPool(h.device, &poolInfo, nil, &commandPool)
+	res := vk.CreateCommandPool(a.device, &poolInfo, nil, &commandPool)
 	if err := vk.Error(res); err != nil {
 		return fmt.Errorf("failed to create command pool: %w", err)
 	}
-	h.commandPool = commandPool
+	a.commandPool = commandPool
 
 	return nil
 }
 
-func (h *HelloTriangleApp) loadModel() error {
-	fh, err := os.Open(h.modelPath)
+func (a *VulkanTutorialApp) loadModel() error {
+	fh, err := os.Open(a.modelPath)
 	if err != nil {
 		return fmt.Errorf("cannot load model: %w", err)
 	}
@@ -1063,12 +1063,12 @@ func (h *HelloTriangleApp) loadModel() error {
 
 					vertexIndex, ok := uniqueVertices[vertex]
 					if !ok {
-						vertexIndex = uint32(len(h.vertices))
+						vertexIndex = uint32(len(a.vertices))
 						uniqueVertices[vertex] = vertexIndex
-						h.vertices = append(h.vertices, vertex)
+						a.vertices = append(a.vertices, vertex)
 					}
 
-					h.indices = append(h.indices, vertexIndex)
+					a.indices = append(a.indices, vertexIndex)
 				}
 
 			}
@@ -1078,15 +1078,15 @@ func (h *HelloTriangleApp) loadModel() error {
 	return nil
 }
 
-func (h *HelloTriangleApp) createVertexBuffer() error {
-	bufferSize := vk.DeviceSize(uint32(len(h.vertices)) * GetVertexSize())
+func (a *VulkanTutorialApp) createVertexBuffer() error {
+	bufferSize := vk.DeviceSize(uint32(len(a.vertices)) * GetVertexSize())
 
 	// Create the staging buffer
 	var (
 		stagingBuffer       vk.Buffer
 		stagingBufferMemory vk.DeviceMemory
 	)
-	err := h.createBuffer(
+	err := a.createBuffer(
 		bufferSize,
 		vk.BufferUsageFlags(vk.BufferUsageTransferSrcBit),
 		vk.MemoryPropertyFlags(vk.MemoryPropertyHostVisibleBit)|
@@ -1099,18 +1099,18 @@ func (h *HelloTriangleApp) createVertexBuffer() error {
 	}
 
 	defer func() {
-		vk.DestroyBuffer(h.device, stagingBuffer, nil)
-		vk.FreeMemory(h.device, stagingBufferMemory, nil)
+		vk.DestroyBuffer(a.device, stagingBuffer, nil)
+		vk.FreeMemory(a.device, stagingBufferMemory, nil)
 	}()
 
 	// Copy the data from host to staging buffer
 	var pData unsafe.Pointer
-	vk.MapMemory(h.device, stagingBufferMemory, 0, bufferSize, 0, &pData)
+	vk.MapMemory(a.device, stagingBufferMemory, 0, bufferSize, 0, &pData)
 
-	bytesSlice := unsafer.SliceToBytes(h.vertices)
+	bytesSlice := unsafer.SliceToBytes(a.vertices)
 
 	vk.Memcopy(pData, bytesSlice)
-	vk.UnmapMemory(h.device, stagingBufferMemory)
+	vk.UnmapMemory(a.device, stagingBufferMemory)
 
 	// Create the device local buffer
 	var (
@@ -1118,7 +1118,7 @@ func (h *HelloTriangleApp) createVertexBuffer() error {
 		vertexBufferMemory vk.DeviceMemory
 	)
 
-	err = h.createBuffer(
+	err = a.createBuffer(
 		bufferSize,
 		vk.BufferUsageFlags(vk.BufferUsageTransferDstBit)|
 			vk.BufferUsageFlags(vk.BufferUsageVertexBufferBit),
@@ -1129,21 +1129,21 @@ func (h *HelloTriangleApp) createVertexBuffer() error {
 	if err != nil {
 		return fmt.Errorf("creating the vertex buffer: %w", err)
 	}
-	h.vertexBuffer = vertexBuffer
-	h.vertexBufferMemory = vertexBufferMemory
+	a.vertexBuffer = vertexBuffer
+	a.vertexBufferMemory = vertexBufferMemory
 
 	// Copy data from the staging buffer to the device local buffer which is our
 	// vertex buffer
-	if err := h.copyBuffer(stagingBuffer, h.vertexBuffer, bufferSize); err != nil {
+	if err := a.copyBuffer(stagingBuffer, a.vertexBuffer, bufferSize); err != nil {
 		return fmt.Errorf("failed to copy staging buffer into vertex: %w", err)
 	}
 
 	return nil
 }
 
-func (h *HelloTriangleApp) createIndexBuffer() error {
+func (a *VulkanTutorialApp) createIndexBuffer() error {
 	bufferSize := vk.DeviceSize(
-		uint32(len(h.indices)) * uint32(unsafe.Sizeof(h.indices[0])),
+		uint32(len(a.indices)) * uint32(unsafe.Sizeof(a.indices[0])),
 	)
 
 	// Create the staging buffer
@@ -1151,7 +1151,7 @@ func (h *HelloTriangleApp) createIndexBuffer() error {
 		stagingBuffer       vk.Buffer
 		stagingBufferMemory vk.DeviceMemory
 	)
-	err := h.createBuffer(
+	err := a.createBuffer(
 		bufferSize,
 		vk.BufferUsageFlags(vk.BufferUsageTransferSrcBit),
 		vk.MemoryPropertyFlags(vk.MemoryPropertyHostVisibleBit)|
@@ -1164,18 +1164,18 @@ func (h *HelloTriangleApp) createIndexBuffer() error {
 	}
 
 	defer func() {
-		vk.DestroyBuffer(h.device, stagingBuffer, nil)
-		vk.FreeMemory(h.device, stagingBufferMemory, nil)
+		vk.DestroyBuffer(a.device, stagingBuffer, nil)
+		vk.FreeMemory(a.device, stagingBufferMemory, nil)
 	}()
 
 	// Copy the data from host to staging buffer
 	var pData unsafe.Pointer
-	vk.MapMemory(h.device, stagingBufferMemory, 0, bufferSize, 0, &pData)
+	vk.MapMemory(a.device, stagingBufferMemory, 0, bufferSize, 0, &pData)
 
-	bytesSlice := unsafer.SliceToBytes(h.indices)
+	bytesSlice := unsafer.SliceToBytes(a.indices)
 
 	vk.Memcopy(pData, bytesSlice)
-	vk.UnmapMemory(h.device, stagingBufferMemory)
+	vk.UnmapMemory(a.device, stagingBufferMemory)
 
 	// Create the device local buffer
 	var (
@@ -1183,7 +1183,7 @@ func (h *HelloTriangleApp) createIndexBuffer() error {
 		indexBufferMemory vk.DeviceMemory
 	)
 
-	err = h.createBuffer(
+	err = a.createBuffer(
 		bufferSize,
 		vk.BufferUsageFlags(vk.BufferUsageTransferDstBit)|
 			vk.BufferUsageFlags(vk.BufferUsageIndexBufferBit),
@@ -1194,24 +1194,24 @@ func (h *HelloTriangleApp) createIndexBuffer() error {
 	if err != nil {
 		return fmt.Errorf("creating the index buffer: %w", err)
 	}
-	h.indexBuffer = indexBuffer
-	h.indexBufferMemory = indexBufferMemory
+	a.indexBuffer = indexBuffer
+	a.indexBufferMemory = indexBufferMemory
 
 	// Copy data from the staging buffer to the device local buffer which is our
 	// index buffer
-	if err := h.copyBuffer(stagingBuffer, h.indexBuffer, bufferSize); err != nil {
+	if err := a.copyBuffer(stagingBuffer, a.indexBuffer, bufferSize); err != nil {
 		return fmt.Errorf("failed to copy staging buffer into index: %w", err)
 	}
 
 	return nil
 }
 
-func (h *HelloTriangleApp) copyBuffer(
+func (a *VulkanTutorialApp) copyBuffer(
 	srcBuffer vk.Buffer,
 	dstBuffer vk.Buffer,
 	size vk.DeviceSize,
 ) error {
-	commandBuffer, err := h.beginSingleTimeCommands()
+	commandBuffer, err := a.beginSingleTimeCommands()
 	if err != nil {
 		return fmt.Errorf("failed to begin single time commands: %w", err)
 	}
@@ -1224,20 +1224,20 @@ func (h *HelloTriangleApp) copyBuffer(
 
 	vk.CmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, []vk.BufferCopy{copyRegion})
 
-	return h.endSingleTimeCommands(commandBuffer)
+	return a.endSingleTimeCommands(commandBuffer)
 }
 
-func (h *HelloTriangleApp) beginSingleTimeCommands() (vk.CommandBuffer, error) {
+func (a *VulkanTutorialApp) beginSingleTimeCommands() (vk.CommandBuffer, error) {
 	allocInfo := vk.CommandBufferAllocateInfo{
 		SType:              vk.StructureTypeCommandBufferAllocateInfo,
 		Level:              vk.CommandBufferLevelPrimary,
-		CommandPool:        h.commandPool,
+		CommandPool:        a.commandPool,
 		CommandBufferCount: 1,
 	}
 
 	commandBuffers := make([]vk.CommandBuffer, 1)
 	res := vk.AllocateCommandBuffers(
-		h.device,
+		a.device,
 		&allocInfo,
 		commandBuffers,
 	)
@@ -1256,11 +1256,11 @@ func (h *HelloTriangleApp) beginSingleTimeCommands() (vk.CommandBuffer, error) {
 	return commandBuffer, nil
 }
 
-func (h *HelloTriangleApp) endSingleTimeCommands(commandBuffer vk.CommandBuffer) error {
+func (a *VulkanTutorialApp) endSingleTimeCommands(commandBuffer vk.CommandBuffer) error {
 	commandBuffers := []vk.CommandBuffer{commandBuffer}
 
 	defer func() {
-		vk.FreeCommandBuffers(h.device, h.commandPool, 1, commandBuffers)
+		vk.FreeCommandBuffers(a.device, a.commandPool, 1, commandBuffers)
 	}()
 
 	res := vk.EndCommandBuffer(commandBuffer)
@@ -1274,12 +1274,12 @@ func (h *HelloTriangleApp) endSingleTimeCommands(commandBuffer vk.CommandBuffer)
 		PCommandBuffers:    commandBuffers,
 	}
 
-	res = vk.QueueSubmit(h.graphicsQueue, 1, []vk.SubmitInfo{submitInfo}, vk.NullFence)
+	res = vk.QueueSubmit(a.graphicsQueue, 1, []vk.SubmitInfo{submitInfo}, vk.NullFence)
 	if res != vk.Success {
 		return fmt.Errorf("failed to submit to graphics queue: %w", vk.Error(res))
 	}
 
-	res = vk.QueueWaitIdle(h.graphicsQueue)
+	res = vk.QueueWaitIdle(a.graphicsQueue)
 	if res != vk.Success {
 		return fmt.Errorf("failed to wait on graphics queue idle: %w", vk.Error(res))
 	}
@@ -1287,13 +1287,13 @@ func (h *HelloTriangleApp) endSingleTimeCommands(commandBuffer vk.CommandBuffer)
 	return nil
 }
 
-func (h *HelloTriangleApp) transitionImageLayout(
+func (a *VulkanTutorialApp) transitionImageLayout(
 	image vk.Image,
 	format vk.Format,
 	oldLayout vk.ImageLayout,
 	newLayout vk.ImageLayout,
 ) error {
-	commandBuffer, err := h.beginSingleTimeCommands()
+	commandBuffer, err := a.beginSingleTimeCommands()
 	if err != nil {
 		return fmt.Errorf("failed to begin single time commands: %w", err)
 	}
@@ -1352,15 +1352,15 @@ func (h *HelloTriangleApp) transitionImageLayout(
 		1, []vk.ImageMemoryBarrier{barrier},
 	)
 
-	return h.endSingleTimeCommands(commandBuffer)
+	return a.endSingleTimeCommands(commandBuffer)
 }
 
-func (h *HelloTriangleApp) copyBufferToImage(
+func (a *VulkanTutorialApp) copyBufferToImage(
 	buffer vk.Buffer,
 	image vk.Image,
 	width, height uint32,
 ) error {
-	commandBuffer, err := h.beginSingleTimeCommands()
+	commandBuffer, err := a.beginSingleTimeCommands()
 	if err != nil {
 		return fmt.Errorf("failed to beging single time command buffer: %w", err)
 	}
@@ -1397,10 +1397,10 @@ func (h *HelloTriangleApp) copyBufferToImage(
 		[]vk.BufferImageCopy{region},
 	)
 
-	return h.endSingleTimeCommands(commandBuffer)
+	return a.endSingleTimeCommands(commandBuffer)
 }
 
-func (h *HelloTriangleApp) createUniformBuffers() error {
+func (a *VulkanTutorialApp) createUniformBuffers() error {
 	bufferSize := vk.DeviceSize(unsafe.Sizeof(UniformBufferObject{}))
 
 	for i := 0; i < maxFramesInFlight; i++ {
@@ -1408,7 +1408,7 @@ func (h *HelloTriangleApp) createUniformBuffers() error {
 			buffer       vk.Buffer
 			bufferMemory vk.DeviceMemory
 		)
-		err := h.createBuffer(
+		err := a.createBuffer(
 			bufferSize,
 			vk.BufferUsageFlags(vk.BufferUsageUniformBufferBit),
 			vk.MemoryPropertyFlags(vk.MemoryPropertyHostVisibleBit)|
@@ -1420,18 +1420,18 @@ func (h *HelloTriangleApp) createUniformBuffers() error {
 			return fmt.Errorf("creating buffer[%d]: %w", i, err)
 		}
 
-		h.uniformBuffers = append(h.uniformBuffers, buffer)
-		h.uniformBuffersMemory = append(h.uniformBuffersMemory, bufferMemory)
+		a.uniformBuffers = append(a.uniformBuffers, buffer)
+		a.uniformBuffersMemory = append(a.uniformBuffersMemory, bufferMemory)
 
 		var pData unsafe.Pointer
-		vk.MapMemory(h.device, h.uniformBuffersMemory[i], 0, bufferSize, 0, &pData)
-		h.uniformBuffersMapped = append(h.uniformBuffersMapped, pData)
+		vk.MapMemory(a.device, a.uniformBuffersMemory[i], 0, bufferSize, 0, &pData)
+		a.uniformBuffersMapped = append(a.uniformBuffersMapped, pData)
 	}
 
 	return nil
 }
 
-func (h *HelloTriangleApp) createDescriptorPool() error {
+func (a *VulkanTutorialApp) createDescriptorPool() error {
 	poolSizes := []vk.DescriptorPoolSize{
 		{
 			Type:            vk.DescriptorTypeUniformBuffer,
@@ -1451,52 +1451,52 @@ func (h *HelloTriangleApp) createDescriptorPool() error {
 	}
 
 	var descriptorPool vk.DescriptorPool
-	res := vk.CreateDescriptorPool(h.device, &poolInfo, nil, &descriptorPool)
+	res := vk.CreateDescriptorPool(a.device, &poolInfo, nil, &descriptorPool)
 	if res != vk.Success {
 		return fmt.Errorf("failed to create descriptor pool: %w", vk.Error(res))
 	}
-	h.descriptorPool = descriptorPool
+	a.descriptorPool = descriptorPool
 
 	return nil
 }
 
-func (h *HelloTriangleApp) createDescriptorSets() error {
+func (a *VulkanTutorialApp) createDescriptorSets() error {
 	layouts := []vk.DescriptorSetLayout{
-		h.descriptorSetLayout,
-		h.descriptorSetLayout,
+		a.descriptorSetLayout,
+		a.descriptorSetLayout,
 	}
 
 	allocInfo := vk.DescriptorSetAllocateInfo{
 		SType:              vk.StructureTypeDescriptorSetAllocateInfo,
-		DescriptorPool:     h.descriptorPool,
+		DescriptorPool:     a.descriptorPool,
 		DescriptorSetCount: maxFramesInFlight,
 		PSetLayouts:        layouts,
 	}
 
-	h.descriptorSets = make([]vk.DescriptorSet, maxFramesInFlight)
+	a.descriptorSets = make([]vk.DescriptorSet, maxFramesInFlight)
 
-	res := vk.AllocateDescriptorSets(h.device, &allocInfo, &h.descriptorSets[0])
+	res := vk.AllocateDescriptorSets(a.device, &allocInfo, &a.descriptorSets[0])
 	if res != vk.Success {
 		return fmt.Errorf("failed to allocate descriptor set: %w", vk.Error(res))
 	}
 
 	for i := 0; i < maxFramesInFlight; i++ {
 		bufferInfo := vk.DescriptorBufferInfo{
-			Buffer: h.uniformBuffers[i],
+			Buffer: a.uniformBuffers[i],
 			Offset: 0,
 			Range:  vk.DeviceSize(vk.WholeSize),
 		}
 
 		imageInfo := vk.DescriptorImageInfo{
 			ImageLayout: vk.ImageLayoutShaderReadOnlyOptimal,
-			ImageView:   h.textureImageView,
-			Sampler:     h.textureSampler,
+			ImageView:   a.textureImageView,
+			Sampler:     a.textureSampler,
 		}
 
 		descriptorWrites := []vk.WriteDescriptorSet{
 			{
 				SType:           vk.StructureTypeWriteDescriptorSet,
-				DstSet:          h.descriptorSets[i],
+				DstSet:          a.descriptorSets[i],
 				DstBinding:      0,
 				DstArrayElement: 0,
 				DescriptorType:  vk.DescriptorTypeUniformBuffer,
@@ -1505,7 +1505,7 @@ func (h *HelloTriangleApp) createDescriptorSets() error {
 			},
 			{
 				SType:           vk.StructureTypeWriteDescriptorSet,
-				DstSet:          h.descriptorSets[i],
+				DstSet:          a.descriptorSets[i],
 				DstBinding:      1,
 				DstArrayElement: 0,
 				DescriptorType:  vk.DescriptorTypeCombinedImageSampler,
@@ -1515,7 +1515,7 @@ func (h *HelloTriangleApp) createDescriptorSets() error {
 		}
 
 		vk.UpdateDescriptorSets(
-			h.device,
+			a.device,
 			uint32(len(descriptorWrites)),
 			descriptorWrites,
 			0,
@@ -1526,7 +1526,7 @@ func (h *HelloTriangleApp) createDescriptorSets() error {
 	return nil
 }
 
-func (h *HelloTriangleApp) createBuffer(
+func (a *VulkanTutorialApp) createBuffer(
 	size vk.DeviceSize,
 	usage vk.BufferUsageFlags,
 	properties vk.MemoryPropertyFlags,
@@ -1540,16 +1540,16 @@ func (h *HelloTriangleApp) createBuffer(
 		SharingMode: vk.SharingModeExclusive,
 	}
 
-	res := vk.CreateBuffer(h.device, &bufferInfo, nil, buffer)
+	res := vk.CreateBuffer(a.device, &bufferInfo, nil, buffer)
 	if res != vk.Success {
 		return fmt.Errorf("failed to create vertex buffer: %w", vk.Error(res))
 	}
 
 	var memRequirements vk.MemoryRequirements
-	vk.GetBufferMemoryRequirements(h.device, *buffer, &memRequirements)
+	vk.GetBufferMemoryRequirements(a.device, *buffer, &memRequirements)
 	memRequirements.Deref()
 
-	memTypeIndex, err := h.findMemoryType(memRequirements.MemoryTypeBits, properties)
+	memTypeIndex, err := a.findMemoryType(memRequirements.MemoryTypeBits, properties)
 	if err != nil {
 		return err
 	}
@@ -1560,12 +1560,12 @@ func (h *HelloTriangleApp) createBuffer(
 		MemoryTypeIndex: memTypeIndex,
 	}
 
-	res = vk.AllocateMemory(h.device, &allocInfo, nil, bufferMemory)
+	res = vk.AllocateMemory(a.device, &allocInfo, nil, bufferMemory)
 	if res != vk.Success {
 		return fmt.Errorf("failed to allocate vertex buffer memory: %s", vk.Error(res))
 	}
 
-	res = vk.BindBufferMemory(h.device, *buffer, *bufferMemory, 0)
+	res = vk.BindBufferMemory(a.device, *buffer, *bufferMemory, 0)
 	if res != vk.Success {
 		return fmt.Errorf("failed to bind buffer memory: %w", vk.Error(res))
 	}
@@ -1573,7 +1573,7 @@ func (h *HelloTriangleApp) createBuffer(
 	return nil
 }
 
-func (h *HelloTriangleApp) createImage(
+func (a *VulkanTutorialApp) createImage(
 	width uint32,
 	height uint32,
 	format vk.Format,
@@ -1601,16 +1601,16 @@ func (h *HelloTriangleApp) createImage(
 		Samples:       vk.SampleCount1Bit,
 	}
 
-	res := vk.CreateImage(h.device, &imageInfo, nil, image)
+	res := vk.CreateImage(a.device, &imageInfo, nil, image)
 	if res != vk.Success {
 		return fmt.Errorf("failed to create an image: %w", vk.Error(res))
 	}
 
 	var memRequirements vk.MemoryRequirements
-	vk.GetImageMemoryRequirements(h.device, *image, &memRequirements)
+	vk.GetImageMemoryRequirements(a.device, *image, &memRequirements)
 	memRequirements.Deref()
 
-	memTypeIndex, err := h.findMemoryType(memRequirements.MemoryTypeBits, properties)
+	memTypeIndex, err := a.findMemoryType(memRequirements.MemoryTypeBits, properties)
 	if err != nil {
 		return err
 	}
@@ -1621,12 +1621,12 @@ func (h *HelloTriangleApp) createImage(
 		MemoryTypeIndex: memTypeIndex,
 	}
 
-	res = vk.AllocateMemory(h.device, &allocInfo, nil, imageMemory)
+	res = vk.AllocateMemory(a.device, &allocInfo, nil, imageMemory)
 	if res != vk.Success {
 		return fmt.Errorf("failed to allocate image buffer memory: %s", vk.Error(res))
 	}
 
-	res = vk.BindImageMemory(h.device, *image, *imageMemory, 0)
+	res = vk.BindImageMemory(a.device, *image, *imageMemory, 0)
 	if res != vk.Success {
 		return fmt.Errorf("failed to bind image memory: %w", vk.Error(res))
 	}
@@ -1634,12 +1634,12 @@ func (h *HelloTriangleApp) createImage(
 	return nil
 }
 
-func (h *HelloTriangleApp) findMemoryType(
+func (a *VulkanTutorialApp) findMemoryType(
 	typeFilter uint32,
 	properties vk.MemoryPropertyFlags,
 ) (uint32, error) {
 	var memProperties vk.PhysicalDeviceMemoryProperties
-	vk.GetPhysicalDeviceMemoryProperties(h.physicalDevice, &memProperties)
+	vk.GetPhysicalDeviceMemoryProperties(a.physicalDevice, &memProperties)
 	memProperties.Deref()
 
 	for i := uint32(0); i < memProperties.MemoryTypeCount; i++ {
@@ -1660,8 +1660,8 @@ func (h *HelloTriangleApp) findMemoryType(
 	return 0, fmt.Errorf("failed to find suitable memory type")
 }
 
-func (h *HelloTriangleApp) createDepthResources() error {
-	depthFormat, err := h.findDepthFormat()
+func (a *VulkanTutorialApp) createDepthResources() error {
+	depthFormat, err := a.findDepthFormat()
 	if err != nil {
 		return fmt.Errorf("could not find suitable depth image format: %w", err)
 	}
@@ -1671,9 +1671,9 @@ func (h *HelloTriangleApp) createDepthResources() error {
 		depthImageMemory vk.DeviceMemory
 	)
 
-	err = h.createImage(
-		h.swapChainExtend.Width,
-		h.swapChainExtend.Height,
+	err = a.createImage(
+		a.swapChainExtend.Width,
+		a.swapChainExtend.Height,
 		depthFormat,
 		vk.ImageTilingOptimal,
 		vk.ImageUsageFlags(vk.ImageUsageDepthStencilAttachmentBit),
@@ -1685,10 +1685,10 @@ func (h *HelloTriangleApp) createDepthResources() error {
 		return fmt.Errorf("could not create depth image: %w", err)
 	}
 
-	h.depthImage = depthImage
-	h.depthImageMemory = depthImageMemory
+	a.depthImage = depthImage
+	a.depthImageMemory = depthImageMemory
 
-	depthImageView, err := h.createImageView(
+	depthImageView, err := a.createImageView(
 		depthImage,
 		depthFormat,
 		vk.ImageAspectFlags(vk.ImageAspectDepthBit),
@@ -1696,19 +1696,19 @@ func (h *HelloTriangleApp) createDepthResources() error {
 	if err != nil {
 		return fmt.Errorf("failed to create depth image view: %w", err)
 	}
-	h.depthImageView = depthImageView
+	a.depthImageView = depthImageView
 
 	return nil
 }
 
-func (h *HelloTriangleApp) findSupportedFormat(
+func (a *VulkanTutorialApp) findSupportedFormat(
 	candidates []vk.Format,
 	tiling vk.ImageTiling,
 	features vk.FormatFeatureFlags,
 ) (vk.Format, error) {
 	for _, format := range candidates {
 		var props vk.FormatProperties
-		vk.GetPhysicalDeviceFormatProperties(h.physicalDevice, format, &props)
+		vk.GetPhysicalDeviceFormatProperties(a.physicalDevice, format, &props)
 		props.Deref()
 
 		if tiling == vk.ImageTilingLinear &&
@@ -1726,8 +1726,8 @@ func (h *HelloTriangleApp) findSupportedFormat(
 	return 0, fmt.Errorf("could not find suitable format")
 }
 
-func (h *HelloTriangleApp) findDepthFormat() (vk.Format, error) {
-	return h.findSupportedFormat(
+func (a *VulkanTutorialApp) findDepthFormat() (vk.Format, error) {
+	return a.findSupportedFormat(
 		[]vk.Format{
 			vk.FormatD32Sfloat,
 			vk.FormatD32SfloatS8Uint,
@@ -1738,12 +1738,12 @@ func (h *HelloTriangleApp) findDepthFormat() (vk.Format, error) {
 	)
 }
 
-func (h *HelloTriangleApp) hasStencilComponent(format vk.Format) bool {
+func (a *VulkanTutorialApp) hasStencilComponent(format vk.Format) bool {
 	return format == vk.FormatD32SfloatS8Uint || format == vk.FormatD24UnormS8Uint
 }
 
-func (h *HelloTriangleApp) createTextureImage() error {
-	fh, err := os.Open(h.texturePath)
+func (a *VulkanTutorialApp) createTextureImage() error {
+	fh, err := os.Open(a.texturePath)
 	if err != nil {
 		return fmt.Errorf("failed to open texture file: %w", err)
 	}
@@ -1765,7 +1765,7 @@ func (h *HelloTriangleApp) createTextureImage() error {
 		stagingBufferMemory vk.DeviceMemory
 	)
 
-	err = h.createBuffer(
+	err = a.createBuffer(
 		imgSize,
 		vk.BufferUsageFlags(vk.BufferUsageTransferSrcBit),
 		vk.MemoryPropertyFlags(vk.MemoryPropertyHostVisibleBit)|
@@ -1778,13 +1778,13 @@ func (h *HelloTriangleApp) createTextureImage() error {
 	}
 
 	defer func() {
-		vk.DestroyBuffer(h.device, staginbBuffer, nil)
-		vk.FreeMemory(h.device, stagingBufferMemory, nil)
+		vk.DestroyBuffer(a.device, staginbBuffer, nil)
+		vk.FreeMemory(a.device, stagingBufferMemory, nil)
 	}()
 
 	var pData unsafe.Pointer
-	vk.MapMemory(h.device, stagingBufferMemory, 0, imgSize, 0, &pData)
-	defer vk.UnmapMemory(h.device, stagingBufferMemory)
+	vk.MapMemory(a.device, stagingBufferMemory, 0, imgSize, 0, &pData)
+	defer vk.UnmapMemory(a.device, stagingBufferMemory)
 
 	// convert the image to RGBA if it is not already
 	b := img.Bounds()
@@ -1799,7 +1799,7 @@ func (h *HelloTriangleApp) createTextureImage() error {
 		textureImageMemory vk.DeviceMemory
 	)
 
-	err = h.createImage(
+	err = a.createImage(
 		texWidth,
 		texHeight,
 		vk.FormatR8g8b8a8Srgb,
@@ -1813,11 +1813,11 @@ func (h *HelloTriangleApp) createTextureImage() error {
 	if err != nil {
 		return fmt.Errorf("filed to create Vulkan image: %w", err)
 	}
-	h.textureImage = textureImage
-	h.textureImageMemory = textureImageMemory
+	a.textureImage = textureImage
+	a.textureImageMemory = textureImageMemory
 
-	err = h.transitionImageLayout(
-		h.textureImage,
+	err = a.transitionImageLayout(
+		a.textureImage,
 		vk.FormatR8g8b8a8Srgb,
 		vk.ImageLayoutUndefined,
 		vk.ImageLayoutTransferDstOptimal,
@@ -1826,13 +1826,13 @@ func (h *HelloTriangleApp) createTextureImage() error {
 		return fmt.Errorf("transition image layout: %w", err)
 	}
 
-	err = h.copyBufferToImage(staginbBuffer, h.textureImage, texWidth, texHeight)
+	err = a.copyBufferToImage(staginbBuffer, a.textureImage, texWidth, texHeight)
 	if err != nil {
 		return fmt.Errorf("copying buffer to image: %w", err)
 	}
 
-	err = h.transitionImageLayout(
-		h.textureImage,
+	err = a.transitionImageLayout(
+		a.textureImage,
 		vk.FormatR8g8b8a8Srgb,
 		vk.ImageLayoutTransferDstOptimal,
 		vk.ImageLayoutShaderReadOnlyOptimal,
@@ -1844,21 +1844,21 @@ func (h *HelloTriangleApp) createTextureImage() error {
 	return nil
 }
 
-func (h *HelloTriangleApp) createTextureImageView() error {
-	textureImageView, err := h.createImageView(
-		h.textureImage,
+func (a *VulkanTutorialApp) createTextureImageView() error {
+	textureImageView, err := a.createImageView(
+		a.textureImage,
 		vk.FormatR8g8b8a8Srgb,
 		vk.ImageAspectFlags(vk.ImageAspectColorBit),
 	)
 	if err != nil {
 		return err
 	}
-	h.textureImageView = textureImageView
+	a.textureImageView = textureImageView
 
 	return nil
 }
 
-func (h *HelloTriangleApp) createImageView(
+func (a *VulkanTutorialApp) createImageView(
 	image vk.Image,
 	format vk.Format,
 	aspectFlags vk.ImageAspectFlags,
@@ -1884,7 +1884,7 @@ func (h *HelloTriangleApp) createImageView(
 	}
 
 	var imageView vk.ImageView
-	res := vk.CreateImageView(h.device, &createInfo, nil, &imageView)
+	res := vk.CreateImageView(a.device, &createInfo, nil, &imageView)
 	if err := vk.Error(res); err != nil {
 		return nil, fmt.Errorf("failed to create image view: %w", err)
 	}
@@ -1892,9 +1892,9 @@ func (h *HelloTriangleApp) createImageView(
 	return imageView, nil
 }
 
-func (h *HelloTriangleApp) createTextureSampler() error {
+func (a *VulkanTutorialApp) createTextureSampler() error {
 	var properties vk.PhysicalDeviceProperties
-	vk.GetPhysicalDeviceProperties(h.physicalDevice, &properties)
+	vk.GetPhysicalDeviceProperties(a.physicalDevice, &properties)
 	properties.Deref()
 	properties.Limits.Deref()
 
@@ -1917,34 +1917,34 @@ func (h *HelloTriangleApp) createTextureSampler() error {
 	}
 
 	var sampler vk.Sampler
-	res := vk.CreateSampler(h.device, &samplerInfo, nil, &sampler)
+	res := vk.CreateSampler(a.device, &samplerInfo, nil, &sampler)
 	if res != vk.Success {
 		return fmt.Errorf("failed to create sampler: %w", vk.Error(res))
 	}
-	h.textureSampler = sampler
+	a.textureSampler = sampler
 
 	return nil
 }
 
-func (h *HelloTriangleApp) createCommandBuffer() error {
+func (a *VulkanTutorialApp) createCommandBuffer() error {
 	allocInfo := vk.CommandBufferAllocateInfo{
 		SType:              vk.StructureTypeCommandBufferAllocateInfo,
-		CommandPool:        h.commandPool,
+		CommandPool:        a.commandPool,
 		Level:              vk.CommandBufferLevelPrimary,
 		CommandBufferCount: 2,
 	}
 
 	commandBuffers := make([]vk.CommandBuffer, 2)
-	res := vk.AllocateCommandBuffers(h.device, &allocInfo, commandBuffers)
+	res := vk.AllocateCommandBuffers(a.device, &allocInfo, commandBuffers)
 	if err := vk.Error(res); err != nil {
 		return fmt.Errorf("failed to allocate command buffer: %w", err)
 	}
-	h.commandBuffers = commandBuffers
+	a.commandBuffers = commandBuffers
 
 	return nil
 }
 
-func (h *HelloTriangleApp) recordCommandBuffer(
+func (a *VulkanTutorialApp) recordCommandBuffer(
 	commandBuffer vk.CommandBuffer,
 	imageIndex uint32,
 ) error {
@@ -1965,32 +1965,32 @@ func (h *HelloTriangleApp) recordCommandBuffer(
 
 	renderPassInfo := vk.RenderPassBeginInfo{
 		SType:       vk.StructureTypeRenderPassBeginInfo,
-		RenderPass:  h.renderPass,
-		Framebuffer: h.swapChainFramebuffers[imageIndex],
+		RenderPass:  a.renderPass,
+		Framebuffer: a.swapChainFramebuffers[imageIndex],
 		RenderArea: vk.Rect2D{
 			Offset: vk.Offset2D{
 				X: 0,
 				Y: 0,
 			},
-			Extent: h.swapChainExtend,
+			Extent: a.swapChainExtend,
 		},
 		ClearValueCount: uint32(len(clearValues)),
 		PClearValues:    clearValues[:],
 	}
 
 	vk.CmdBeginRenderPass(commandBuffer, &renderPassInfo, vk.SubpassContentsInline)
-	vk.CmdBindPipeline(commandBuffer, vk.PipelineBindPointGraphics, h.graphicsPipline)
+	vk.CmdBindPipeline(commandBuffer, vk.PipelineBindPointGraphics, a.graphicsPipline)
 
-	vertexBuffers := []vk.Buffer{h.vertexBuffer}
+	vertexBuffers := []vk.Buffer{a.vertexBuffer}
 	offsets := []vk.DeviceSize{0}
 	vk.CmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets)
 
-	vk.CmdBindIndexBuffer(commandBuffer, h.indexBuffer, 0, vk.IndexTypeUint32)
+	vk.CmdBindIndexBuffer(commandBuffer, a.indexBuffer, 0, vk.IndexTypeUint32)
 
 	viewport := vk.Viewport{
 		X: 0, Y: 0,
-		Width:    float32(h.swapChainExtend.Width),
-		Height:   float32(h.swapChainExtend.Height),
+		Width:    float32(a.swapChainExtend.Width),
+		Height:   float32(a.swapChainExtend.Height),
 		MinDepth: 0,
 		MaxDepth: 1,
 	}
@@ -1998,22 +1998,22 @@ func (h *HelloTriangleApp) recordCommandBuffer(
 
 	scissor := vk.Rect2D{
 		Offset: vk.Offset2D{X: 0, Y: 0},
-		Extent: h.swapChainExtend,
+		Extent: a.swapChainExtend,
 	}
 	vk.CmdSetScissor(commandBuffer, 0, 1, []vk.Rect2D{scissor})
 
 	vk.CmdBindDescriptorSets(
 		commandBuffer,
 		vk.PipelineBindPointGraphics,
-		h.pipelineLayout,
+		a.pipelineLayout,
 		0,
 		1,
-		[]vk.DescriptorSet{h.descriptorSets[h.curentFrame]},
+		[]vk.DescriptorSet{a.descriptorSets[a.curentFrame]},
 		0,
 		nil,
 	)
 
-	vk.CmdDrawIndexed(commandBuffer, uint32(len(h.indices)), 1, 0, 0, 0)
+	vk.CmdDrawIndexed(commandBuffer, uint32(len(a.indices)), 1, 0, 0, 0)
 	vk.CmdEndRenderPass(commandBuffer)
 
 	if err := vk.Error(vk.EndCommandBuffer(commandBuffer)); err != nil {
@@ -2022,7 +2022,7 @@ func (h *HelloTriangleApp) recordCommandBuffer(
 	return nil
 }
 
-func (h *HelloTriangleApp) createSyncObjects() error {
+func (a *VulkanTutorialApp) createSyncObjects() error {
 	semaphoreInfo := vk.SemaphoreCreateInfo{
 		SType: vk.StructureTypeSemaphoreCreateInfo,
 	}
@@ -2035,34 +2035,34 @@ func (h *HelloTriangleApp) createSyncObjects() error {
 	for i := 0; i < maxFramesInFlight; i++ {
 		var imageAvailabmeSem vk.Semaphore
 		if err := vk.Error(
-			vk.CreateSemaphore(h.device, &semaphoreInfo, nil, &imageAvailabmeSem),
+			vk.CreateSemaphore(a.device, &semaphoreInfo, nil, &imageAvailabmeSem),
 		); err != nil {
 			return fmt.Errorf("failed to create imageAvailabmeSem: %w", err)
 		}
-		h.imageAvailabmeSems = append(h.imageAvailabmeSems, imageAvailabmeSem)
+		a.imageAvailabmeSems = append(a.imageAvailabmeSems, imageAvailabmeSem)
 
 		var renderFinishedSem vk.Semaphore
 		if err := vk.Error(
-			vk.CreateSemaphore(h.device, &semaphoreInfo, nil, &renderFinishedSem),
+			vk.CreateSemaphore(a.device, &semaphoreInfo, nil, &renderFinishedSem),
 		); err != nil {
 			return fmt.Errorf("failed to create renderFinishedSem: %w", err)
 		}
-		h.renderFinishedSems = append(h.renderFinishedSems, renderFinishedSem)
+		a.renderFinishedSems = append(a.renderFinishedSems, renderFinishedSem)
 
 		var fence vk.Fence
 		if err := vk.Error(
-			vk.CreateFence(h.device, &fenceInfo, nil, &fence),
+			vk.CreateFence(a.device, &fenceInfo, nil, &fence),
 		); err != nil {
 			return fmt.Errorf("failed to create inFlightFence: %w", err)
 		}
-		h.inFlightFences = append(h.inFlightFences, fence)
+		a.inFlightFences = append(a.inFlightFences, fence)
 	}
 
 	return nil
 }
 
-func (h *HelloTriangleApp) createInsance() error {
-	if h.enableValidationLayers && !h.checkValidationSupport() {
+func (a *VulkanTutorialApp) createInsance() error {
+	if a.enableValidationLayers && !a.checkValidationSupport() {
 		return fmt.Errorf("validation layers requested but not available")
 	}
 
@@ -2083,9 +2083,9 @@ func (h *HelloTriangleApp) createInsance() error {
 		PpEnabledExtensionNames: glfwExtensions,
 	}
 
-	if h.enableValidationLayers {
-		createInfo.EnabledLayerCount = uint32(len(h.validationLayers))
-		createInfo.PpEnabledLayerNames = h.validationLayers
+	if a.enableValidationLayers {
+		createInfo.EnabledLayerCount = uint32(len(a.validationLayers))
+		createInfo.PpEnabledLayerNames = a.validationLayers
 	}
 
 	var instance vk.Instance
@@ -2093,13 +2093,13 @@ func (h *HelloTriangleApp) createInsance() error {
 		return fmt.Errorf("failed to create Vulkan instance: %w", err)
 	}
 
-	h.instance = instance
+	a.instance = instance
 	return nil
 }
 
 // findQueueFamilies returns a FamilyIndeces populated with Vulkan queue families needed
 // by the program.
-func (h *HelloTriangleApp) findQueueFamilies(device vk.PhysicalDevice) queues.FamilyIndices {
+func (a *VulkanTutorialApp) findQueueFamilies(device vk.PhysicalDevice) queues.FamilyIndices {
 	indices := queues.FamilyIndices{}
 
 	var queueFamilyCount uint32
@@ -2117,7 +2117,7 @@ func (h *HelloTriangleApp) findQueueFamilies(device vk.PhysicalDevice) queues.Fa
 
 		var hasPresent vk.Bool32
 		err := vk.Error(
-			vk.GetPhysicalDeviceSurfaceSupport(device, uint32(i), h.surface, &hasPresent),
+			vk.GetPhysicalDeviceSurfaceSupport(device, uint32(i), a.surface, &hasPresent),
 		)
 		if err != nil {
 			log.Printf("error querying surface support for queue family %d: %s", i, err)
@@ -2133,13 +2133,13 @@ func (h *HelloTriangleApp) findQueueFamilies(device vk.PhysicalDevice) queues.Fa
 	return indices
 }
 
-func (h *HelloTriangleApp) querySwapChainSupport(
+func (a *VulkanTutorialApp) querySwapChainSupport(
 	device vk.PhysicalDevice,
 ) swapChainSupportDetails {
 	details := swapChainSupportDetails{}
 
 	var capabilities vk.SurfaceCapabilities
-	res := vk.GetPhysicalDeviceSurfaceCapabilities(device, h.surface, &capabilities)
+	res := vk.GetPhysicalDeviceSurfaceCapabilities(device, a.surface, &capabilities)
 	if err := vk.Error(res); err != nil {
 		panic(fmt.Sprintf("failed to query device surface capabilities: %s", err))
 	}
@@ -2151,14 +2151,14 @@ func (h *HelloTriangleApp) querySwapChainSupport(
 	details.capabilities = capabilities
 
 	var formatCount uint32
-	res = vk.GetPhysicalDeviceSurfaceFormats(device, h.surface, &formatCount, nil)
+	res = vk.GetPhysicalDeviceSurfaceFormats(device, a.surface, &formatCount, nil)
 	if err := vk.Error(res); err != nil {
 		panic(fmt.Sprintf("failed to query device surface formats: %s", err))
 	}
 
 	if formatCount != 0 {
 		formats := make([]vk.SurfaceFormat, formatCount)
-		vk.GetPhysicalDeviceSurfaceFormats(device, h.surface, &formatCount, formats)
+		vk.GetPhysicalDeviceSurfaceFormats(device, a.surface, &formatCount, formats)
 		for _, format := range formats {
 			format.Deref()
 			details.formats = append(details.formats, format)
@@ -2167,7 +2167,7 @@ func (h *HelloTriangleApp) querySwapChainSupport(
 
 	var presentModeCount uint32
 	res = vk.GetPhysicalDeviceSurfacePresentModes(
-		device, h.surface, &presentModeCount, nil,
+		device, a.surface, &presentModeCount, nil,
 	)
 	if err := vk.Error(res); err != nil {
 		panic(fmt.Sprintf("failed to query device surface present modes: %s", err))
@@ -2176,7 +2176,7 @@ func (h *HelloTriangleApp) querySwapChainSupport(
 	if presentModeCount != 0 {
 		presentModes := make([]vk.PresentMode, presentModeCount)
 		vk.GetPhysicalDeviceSurfacePresentModes(
-			device, h.surface, &presentModeCount, presentModes,
+			device, a.surface, &presentModeCount, presentModes,
 		)
 		details.presentModes = presentModes
 	}
@@ -2186,7 +2186,7 @@ func (h *HelloTriangleApp) querySwapChainSupport(
 
 // getDeviceScore returns how suitable is this device for the current program.
 // Bigger score means better. Zero or negative means the device cannot be used.
-func (h *HelloTriangleApp) getDeviceScore(device vk.PhysicalDevice) uint32 {
+func (a *VulkanTutorialApp) getDeviceScore(device vk.PhysicalDevice) uint32 {
 	var (
 		deviceScore uint32
 		properties  vk.PhysicalDeviceProperties
@@ -2201,7 +2201,7 @@ func (h *HelloTriangleApp) getDeviceScore(device vk.PhysicalDevice) uint32 {
 		deviceScore++
 	}
 
-	if !h.isDeviceSuitable(device) {
+	if !a.isDeviceSuitable(device) {
 		deviceScore = 0
 	}
 
@@ -2216,13 +2216,13 @@ func (h *HelloTriangleApp) getDeviceScore(device vk.PhysicalDevice) uint32 {
 	return deviceScore
 }
 
-func (h *HelloTriangleApp) isDeviceSuitable(device vk.PhysicalDevice) bool {
-	indices := h.findQueueFamilies(device)
-	extensionsSupported := h.checkDeviceExtensionSupport(device)
+func (a *VulkanTutorialApp) isDeviceSuitable(device vk.PhysicalDevice) bool {
+	indices := a.findQueueFamilies(device)
+	extensionsSupported := a.checkDeviceExtensionSupport(device)
 
 	swapChainAdequate := false
 	if extensionsSupported {
-		swapChainSupport := h.querySwapChainSupport(device)
+		swapChainSupport := a.querySwapChainSupport(device)
 		swapChainAdequate = len(swapChainSupport.formats) > 0 &&
 			len(swapChainSupport.presentModes) > 0
 	}
@@ -2235,7 +2235,7 @@ func (h *HelloTriangleApp) isDeviceSuitable(device vk.PhysicalDevice) bool {
 		supportedFeatures.SamplerAnisotropy.B()
 }
 
-func (h *HelloTriangleApp) chooseSwapSurfaceFormat(
+func (a *VulkanTutorialApp) chooseSwapSurfaceFormat(
 	availableFormats []vk.SurfaceFormat,
 ) vk.SurfaceFormat {
 	for _, format := range availableFormats {
@@ -2248,7 +2248,7 @@ func (h *HelloTriangleApp) chooseSwapSurfaceFormat(
 	return availableFormats[0]
 }
 
-func (h *HelloTriangleApp) chooseSwapPresentMode(
+func (a *VulkanTutorialApp) chooseSwapPresentMode(
 	available []vk.PresentMode,
 ) vk.PresentMode {
 	for _, mode := range available {
@@ -2260,14 +2260,14 @@ func (h *HelloTriangleApp) chooseSwapPresentMode(
 	return vk.PresentModeFifo
 }
 
-func (h *HelloTriangleApp) chooseSwapExtend(
+func (a *VulkanTutorialApp) chooseSwapExtend(
 	capabilities vk.SurfaceCapabilities,
 ) vk.Extent2D {
 	if capabilities.CurrentExtent.Width != math.MaxUint32 {
 		return capabilities.CurrentExtent
 	}
 
-	width, height := h.window.GetFramebufferSize()
+	width, height := a.window.GetFramebufferSize()
 
 	actualExtend := vk.Extent2D{
 		Width:  uint32(width),
@@ -2291,7 +2291,7 @@ func (h *HelloTriangleApp) chooseSwapExtend(
 	return actualExtend
 }
 
-func (h *HelloTriangleApp) checkDeviceExtensionSupport(device vk.PhysicalDevice) bool {
+func (a *VulkanTutorialApp) checkDeviceExtensionSupport(device vk.PhysicalDevice) bool {
 	var extensionsCount uint32
 	res := vk.EnumerateDeviceExtensionProperties(device, "", &extensionsCount, nil)
 	if err := vk.Error(res); err != nil {
@@ -2312,7 +2312,7 @@ func (h *HelloTriangleApp) checkDeviceExtensionSupport(device vk.PhysicalDevice)
 	}
 
 	requiredExtensions := make(map[string]struct{})
-	for _, extensionName := range h.deviceExtensions {
+	for _, extensionName := range a.deviceExtensions {
 		requiredExtensions[extensionName] = struct{}{}
 	}
 
@@ -2326,7 +2326,7 @@ func (h *HelloTriangleApp) checkDeviceExtensionSupport(device vk.PhysicalDevice)
 	return len(requiredExtensions) == 0
 }
 
-func (h *HelloTriangleApp) checkValidationSupport() bool {
+func (a *VulkanTutorialApp) checkValidationSupport() bool {
 	var count uint32
 	if vk.EnumerateInstanceLayerProperties(&count, nil) != vk.Success {
 		return false
@@ -2345,7 +2345,7 @@ func (h *HelloTriangleApp) checkValidationSupport() bool {
 		availableLayersStr = append(availableLayersStr, layerName+"\x00")
 	}
 
-	for _, validationLayer := range h.validationLayers {
+	for _, validationLayer := range a.validationLayers {
 		layerFound := false
 
 		for _, instanceLayer := range availableLayersStr {
@@ -2363,7 +2363,7 @@ func (h *HelloTriangleApp) checkValidationSupport() bool {
 	return true
 }
 
-func (h *HelloTriangleApp) createShaderModule(code []byte) (vk.ShaderModule, error) {
+func (a *VulkanTutorialApp) createShaderModule(code []byte) (vk.ShaderModule, error) {
 	createInfo := vk.ShaderModuleCreateInfo{
 		SType:    vk.StructureTypeShaderModuleCreateInfo,
 		CodeSize: uint(len(code)),
@@ -2371,15 +2371,15 @@ func (h *HelloTriangleApp) createShaderModule(code []byte) (vk.ShaderModule, err
 	}
 
 	var shaderModule vk.ShaderModule
-	res := vk.CreateShaderModule(h.device, &createInfo, nil, &shaderModule)
+	res := vk.CreateShaderModule(a.device, &createInfo, nil, &shaderModule)
 	return shaderModule, vk.Error(res)
 }
 
-func (h *HelloTriangleApp) mainLoop() error {
+func (a *VulkanTutorialApp) mainLoop() error {
 	log.Printf("main loop!\n")
 
-	for !h.window.ShouldClose() {
-		err := h.drawFrame()
+	for !a.window.ShouldClose() {
+		err := a.drawFrame()
 		if err != nil {
 			return fmt.Errorf("error drawing a frame: %w", err)
 		}
@@ -2387,51 +2387,51 @@ func (h *HelloTriangleApp) mainLoop() error {
 		glfw.PollEvents()
 	}
 
-	vk.DeviceWaitIdle(h.device)
+	vk.DeviceWaitIdle(a.device)
 
 	return nil
 }
 
-func (h *HelloTriangleApp) drawFrame() error {
-	fences := []vk.Fence{h.inFlightFences[h.curentFrame]}
-	vk.WaitForFences(h.device, 1, fences, vk.True, math.MaxUint64)
+func (a *VulkanTutorialApp) drawFrame() error {
+	fences := []vk.Fence{a.inFlightFences[a.curentFrame]}
+	vk.WaitForFences(a.device, 1, fences, vk.True, math.MaxUint64)
 
 	var imageIndex uint32
 	res := vk.AcquireNextImage(
-		h.device,
-		h.swapChain,
+		a.device,
+		a.swapChain,
 		math.MaxUint64,
-		h.imageAvailabmeSems[h.curentFrame],
+		a.imageAvailabmeSems[a.curentFrame],
 		vk.Fence(vk.NullHandle),
 		&imageIndex,
 	)
 	if res == vk.ErrorOutOfDate {
-		h.recreateSwapChain()
+		a.recreateSwapChain()
 		return nil
 	} else if res != vk.Success && res != vk.Suboptimal {
 		return fmt.Errorf("failed to acquire swap chain image: %w", vk.Error(res))
 	}
 
 	// Only reset the fence if we are submitting work.
-	vk.ResetFences(h.device, 1, fences)
+	vk.ResetFences(a.device, 1, fences)
 
-	commandBuffer := h.commandBuffers[h.curentFrame]
+	commandBuffer := a.commandBuffers[a.curentFrame]
 
 	vk.ResetCommandBuffer(commandBuffer, 0)
-	if err := h.recordCommandBuffer(commandBuffer, imageIndex); err != nil {
+	if err := a.recordCommandBuffer(commandBuffer, imageIndex); err != nil {
 		return fmt.Errorf("recording command buffer: %w", err)
 	}
 
-	h.updateUniformBuffer(h.curentFrame)
+	a.updateUniformBuffer(a.curentFrame)
 
 	signalSemaphores := []vk.Semaphore{
-		h.renderFinishedSems[h.curentFrame],
+		a.renderFinishedSems[a.curentFrame],
 	}
 
 	submitInfo := vk.SubmitInfo{
 		SType:              vk.StructureTypeSubmitInfo,
 		WaitSemaphoreCount: 1,
-		PWaitSemaphores:    []vk.Semaphore{h.imageAvailabmeSems[h.curentFrame]},
+		PWaitSemaphores:    []vk.Semaphore{a.imageAvailabmeSems[a.curentFrame]},
 		PWaitDstStageMask: []vk.PipelineStageFlags{
 			vk.PipelineStageFlags(vk.PipelineStageColorAttachmentOutputBit),
 		},
@@ -2442,17 +2442,17 @@ func (h *HelloTriangleApp) drawFrame() error {
 	}
 
 	res = vk.QueueSubmit(
-		h.graphicsQueue,
+		a.graphicsQueue,
 		1,
 		[]vk.SubmitInfo{submitInfo},
-		h.inFlightFences[h.curentFrame],
+		a.inFlightFences[a.curentFrame],
 	)
 	if err := vk.Error(res); err != nil {
 		return fmt.Errorf("queue submit error: %w", err)
 	}
 
 	swapChains := []vk.Swapchain{
-		h.swapChain,
+		a.swapChain,
 	}
 
 	presentInfo := vk.PresentInfo{
@@ -2464,20 +2464,20 @@ func (h *HelloTriangleApp) drawFrame() error {
 		PImageIndices:      []uint32{imageIndex},
 	}
 
-	res = vk.QueuePresent(h.presentQueue, &presentInfo)
-	if res == vk.ErrorOutOfDate || res == vk.Suboptimal || h.frameBufferResized {
-		h.frameBufferResized = false
-		h.recreateSwapChain()
+	res = vk.QueuePresent(a.presentQueue, &presentInfo)
+	if res == vk.ErrorOutOfDate || res == vk.Suboptimal || a.frameBufferResized {
+		a.frameBufferResized = false
+		a.recreateSwapChain()
 	} else if res != vk.Success {
 		return fmt.Errorf("failed to present swap chain image: %w", vk.Error(res))
 	}
 
-	h.curentFrame = (h.curentFrame + 1) % maxFramesInFlight
+	a.curentFrame = (a.curentFrame + 1) % maxFramesInFlight
 	return nil
 }
 
-func (h *HelloTriangleApp) updateUniformBuffer(currentImage uint32) {
-	frameTime := time.Since(h.startTime)
+func (a *VulkanTutorialApp) updateUniformBuffer(currentImage uint32) {
+	frameTime := time.Since(a.startTime)
 	ubo := UniformBufferObject{}
 
 	ubo.model.Identity()
@@ -2488,15 +2488,15 @@ func (h *HelloTriangleApp) updateUniformBuffer(currentImage uint32) {
 		&linmath.Vec3{0, 0, 1},
 	)
 
-	aspectR := float32(h.swapChainExtend.Width) / float32(h.swapChainExtend.Height)
+	aspectR := float32(a.swapChainExtend.Width) / float32(a.swapChainExtend.Height)
 	ubo.proj.Perspective(45, aspectR, 0.1, 10)
 
 	ubo.proj[1][1] *= -1
 
-	vk.Memcopy(h.uniformBuffersMapped[currentImage], unsafer.StructToBytes(&ubo))
+	vk.Memcopy(a.uniformBuffersMapped[currentImage], unsafer.StructToBytes(&ubo))
 }
 
-func (h *HelloTriangleApp) cleanup() error {
+func (a *VulkanTutorialApp) cleanup() error {
 	return nil
 }
 

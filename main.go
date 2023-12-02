@@ -35,10 +35,12 @@ func init() {
 	runtime.LockOSThread()
 
 	flag.BoolVar(&args.debug, "debug", false, "Enable Vulkan validation layers")
+	flag.BoolVar(&args.vsync, "vsync", false, "Enable VSync")
 }
 
 var args struct {
 	debug bool
+	vsync bool
 }
 
 const (
@@ -2542,6 +2544,10 @@ func (a *VulkanTutorialApp) chooseSwapSurfaceFormat(
 func (a *VulkanTutorialApp) chooseSwapPresentMode(
 	available []vk.PresentMode,
 ) vk.PresentMode {
+	if args.vsync {
+		return vk.PresentModeFifo
+	}
+
 	for _, mode := range available {
 		if mode == vk.PresentModeMailbox {
 			return mode

@@ -159,6 +159,7 @@ type VulkanTutorialApp struct {
 	descriptorPool vk.DescriptorPool
 	descriptorSets []vk.DescriptorSet
 
+	mipLevels          uint32
 	textureImage       vk.Image
 	textureImageMemory vk.DeviceMemory
 	textureImageView   vk.ImageView
@@ -632,6 +633,7 @@ func (a *VulkanTutorialApp) createImageViews() error {
 			swapChainImage,
 			a.swapChainImageFormat,
 			vk.ImageAspectFlags(vk.ImageAspectColorBit),
+			1,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create image %d: %w", i, err)
@@ -1292,6 +1294,7 @@ func (a *VulkanTutorialApp) transitionImageLayout(
 	format vk.Format,
 	oldLayout vk.ImageLayout,
 	newLayout vk.ImageLayout,
+	mipLevels uint32,
 ) error {
 	commandBuffer, err := a.beginSingleTimeCommands()
 	if err != nil {
@@ -1308,7 +1311,7 @@ func (a *VulkanTutorialApp) transitionImageLayout(
 		SubresourceRange: vk.ImageSubresourceRange{
 			AspectMask:     vk.ImageAspectFlags(vk.ImageAspectColorBit),
 			BaseMipLevel:   0,
-			LevelCount:     1,
+			LevelCount:     mipLevels,
 			BaseArrayLayer: 0,
 			LayerCount:     1,
 		},
@@ -1576,6 +1579,7 @@ func (a *VulkanTutorialApp) createBuffer(
 func (a *VulkanTutorialApp) createImage(
 	width uint32,
 	height uint32,
+	mipLevels uint32,
 	format vk.Format,
 	tiling vk.ImageTiling,
 	usage vk.ImageUsageFlags,
@@ -1591,7 +1595,7 @@ func (a *VulkanTutorialApp) createImage(
 			Height: height,
 			Depth:  1,
 		},
-		MipLevels:     1,
+		MipLevels:     mipLevels,
 		ArrayLayers:   1,
 		Format:        format,
 		Tiling:        tiling,
@@ -1674,6 +1678,7 @@ func (a *VulkanTutorialApp) createDepthResources() error {
 	err = a.createImage(
 		a.swapChainExtend.Width,
 		a.swapChainExtend.Height,
+		1,
 		depthFormat,
 		vk.ImageTilingOptimal,
 		vk.ImageUsageFlags(vk.ImageUsageDepthStencilAttachmentBit),
@@ -1692,6 +1697,7 @@ func (a *VulkanTutorialApp) createDepthResources() error {
 		depthImage,
 		depthFormat,
 		vk.ImageAspectFlags(vk.ImageAspectDepthBit),
+		1,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create depth image view: %w", err)
@@ -1759,6 +1765,9 @@ func (a *VulkanTutorialApp) createTextureImage() error {
 	texHeight := uint32(imgBoundsSize.Y)
 
 	imgSize := vk.DeviceSize(texWidth * texHeight * 4)
+	a.mipLevels = uint32(math.Floor(
+		math.Log2(math.Max(float64(texWidth), float64(texHeight))),
+	)) + 1
 
 	var (
 		staginbBuffer       vk.Buffer
@@ -1802,10 +1811,12 @@ func (a *VulkanTutorialApp) createTextureImage() error {
 	err = a.createImage(
 		texWidth,
 		texHeight,
+		a.mipLevels,
 		vk.FormatR8g8b8a8Srgb,
 		vk.ImageTilingOptimal,
 		vk.ImageUsageFlags(vk.ImageUsageTransferDstBit)|
-			vk.ImageUsageFlags(vk.ImageUsageSampledBit),
+			vk.ImageUsageFlags(vk.ImageUsageSampledBit)|
+			vk.ImageUsageFlags(vk.ImageUsageTransferSrcBit),
 		vk.MemoryPropertyFlags(vk.MemoryPropertyDeviceLocalBit),
 		&textureImage,
 		&textureImageMemory,
@@ -1821,6 +1832,7 @@ func (a *VulkanTutorialApp) createTextureImage() error {
 		vk.FormatR8g8b8a8Srgb,
 		vk.ImageLayoutUndefined,
 		vk.ImageLayoutTransferDstOptimal,
+		a.mipLevels,
 	)
 	if err != nil {
 		return fmt.Errorf("transition image layout: %w", err)
@@ -1831,17 +1843,159 @@ func (a *VulkanTutorialApp) createTextureImage() error {
 		return fmt.Errorf("copying buffer to image: %w", err)
 	}
 
-	err = a.transitionImageLayout(
-		a.textureImage,
+	err = a.generateMipmaps(
+		textureImage,
 		vk.FormatR8g8b8a8Srgb,
-		vk.ImageLayoutTransferDstOptimal,
-		vk.ImageLayoutShaderReadOnlyOptimal,
+		texWidth,
+		texHeight,
+		a.mipLevels,
 	)
 	if err != nil {
-		return fmt.Errorf("transitioning to read only optimal layout: %w", err)
+		return fmt.Errorf("failed to generate texture mipmaps: %w", err)
 	}
 
 	return nil
+}
+
+func (a *VulkanTutorialApp) generateMipmaps(
+	image vk.Image,
+	imageFormat vk.Format,
+	texWidth, texHeight uint32,
+	mipLevels uint32,
+) error {
+	// Check if image format supports linear blitting
+	var formatProperties vk.FormatProperties
+	vk.GetPhysicalDeviceFormatProperties(a.physicalDevice, imageFormat, &formatProperties)
+	formatProperties.Deref()
+
+	formatFlags := formatProperties.OptimalTilingFeatures
+	requiredFlags := vk.FormatFeatureFlags(vk.FormatFeatureSampledImageFilterLinearBit)
+
+	if formatFlags&requiredFlags == 0 {
+		return fmt.Errorf("texture image format does not support linear bilitting")
+	}
+
+	commandBuffer, err := a.beginSingleTimeCommands()
+	if err != nil {
+		return fmt.Errorf("failed to create single time command buffer: %w", err)
+	}
+
+	barrier := vk.ImageMemoryBarrier{
+		SType:               vk.StructureTypeImageMemoryBarrier,
+		Image:               image,
+		SrcQueueFamilyIndex: vk.QueueFamilyIgnored,
+		DstQueueFamilyIndex: vk.QueueFamilyIgnored,
+		SubresourceRange: vk.ImageSubresourceRange{
+			AspectMask:     vk.ImageAspectFlags(vk.ImageAspectColorBit),
+			BaseArrayLayer: 0,
+			LayerCount:     1,
+			LevelCount:     1,
+		},
+	}
+
+	var (
+		mipWidth  = texWidth
+		mipHeight = texHeight
+	)
+	for i := uint32(1); i < a.mipLevels; i++ {
+		barrier.SubresourceRange.BaseMipLevel = i - 1
+		barrier.OldLayout = vk.ImageLayoutTransferDstOptimal
+		barrier.NewLayout = vk.ImageLayoutTransferSrcOptimal
+		barrier.SrcAccessMask = vk.AccessFlags(vk.AccessTransferWriteBit)
+		barrier.DstAccessMask = vk.AccessFlags(vk.AccessTransferReadBit)
+
+		vk.CmdPipelineBarrier(
+			commandBuffer,
+			vk.PipelineStageFlags(vk.PipelineStageTransferBit),
+			vk.PipelineStageFlags(vk.PipelineStageTransferBit),
+			0,
+			0, nil,
+			0, nil,
+			1, []vk.ImageMemoryBarrier{barrier},
+		)
+
+		var (
+			newWidth  = int32(1)
+			newHeight = int32(1)
+		)
+		if mipWidth > 1 {
+			newWidth = int32(mipWidth) / 2
+		}
+		if mipHeight > 1 {
+			newHeight = int32(mipHeight) / 2
+		}
+
+		blit := vk.ImageBlit{
+			SrcOffsets: [2]vk.Offset3D{
+				{X: 0, Y: 0, Z: 0},
+				{X: int32(mipWidth), Y: int32(mipHeight), Z: 1},
+			},
+			SrcSubresource: vk.ImageSubresourceLayers{
+				AspectMask:     vk.ImageAspectFlags(vk.ImageAspectColorBit),
+				MipLevel:       i - 1,
+				BaseArrayLayer: 0,
+				LayerCount:     1,
+			},
+			DstOffsets: [2]vk.Offset3D{
+				{X: 0, Y: 0, Z: 0},
+				{X: newWidth, Y: newHeight, Z: 1},
+			},
+			DstSubresource: vk.ImageSubresourceLayers{
+				AspectMask:     vk.ImageAspectFlags(vk.ImageAspectColorBit),
+				MipLevel:       i,
+				BaseArrayLayer: 0,
+				LayerCount:     1,
+			},
+		}
+
+		vk.CmdBlitImage(
+			commandBuffer,
+			image, vk.ImageLayoutTransferSrcOptimal,
+			image, vk.ImageLayoutTransferDstOptimal,
+			1, []vk.ImageBlit{blit},
+			vk.FilterLinear,
+		)
+
+		barrier.OldLayout = vk.ImageLayoutTransferSrcOptimal
+		barrier.NewLayout = vk.ImageLayoutShaderReadOnlyOptimal
+		barrier.SrcAccessMask = vk.AccessFlags(vk.AccessTransferReadBit)
+		barrier.DstAccessMask = vk.AccessFlags(vk.AccessShaderReadBit)
+
+		vk.CmdPipelineBarrier(
+			commandBuffer,
+			vk.PipelineStageFlags(vk.PipelineStageTransferBit),
+			vk.PipelineStageFlags(vk.PipelineStageFragmentShaderBit),
+			0,
+			0, nil,
+			0, nil,
+			1, []vk.ImageMemoryBarrier{barrier},
+		)
+
+		if mipWidth > 1 {
+			mipWidth /= 2
+		}
+		if mipHeight > 1 {
+			mipHeight /= 2
+		}
+	}
+
+	barrier.SubresourceRange.BaseMipLevel = mipLevels - 1
+	barrier.OldLayout = vk.ImageLayoutTransferDstOptimal
+	barrier.NewLayout = vk.ImageLayoutShaderReadOnlyOptimal
+	barrier.SrcAccessMask = vk.AccessFlags(vk.AccessTransferWriteBit)
+	barrier.DstAccessMask = vk.AccessFlags(vk.AccessShaderReadBit)
+
+	vk.CmdPipelineBarrier(
+		commandBuffer,
+		vk.PipelineStageFlags(vk.PipelineStageTransferBit),
+		vk.PipelineStageFlags(vk.PipelineStageFragmentShaderBit),
+		0,
+		0, nil,
+		0, nil,
+		1, []vk.ImageMemoryBarrier{barrier},
+	)
+
+	return a.endSingleTimeCommands(commandBuffer)
 }
 
 func (a *VulkanTutorialApp) createTextureImageView() error {
@@ -1849,6 +2003,7 @@ func (a *VulkanTutorialApp) createTextureImageView() error {
 		a.textureImage,
 		vk.FormatR8g8b8a8Srgb,
 		vk.ImageAspectFlags(vk.ImageAspectColorBit),
+		a.mipLevels,
 	)
 	if err != nil {
 		return err
@@ -1862,6 +2017,7 @@ func (a *VulkanTutorialApp) createImageView(
 	image vk.Image,
 	format vk.Format,
 	aspectFlags vk.ImageAspectFlags,
+	mipLevels uint32,
 ) (vk.ImageView, error) {
 	createInfo := vk.ImageViewCreateInfo{
 		SType:    vk.StructureTypeImageViewCreateInfo,
@@ -1877,7 +2033,7 @@ func (a *VulkanTutorialApp) createImageView(
 		SubresourceRange: vk.ImageSubresourceRange{
 			AspectMask:     aspectFlags,
 			BaseMipLevel:   0,
-			LevelCount:     1,
+			LevelCount:     mipLevels,
 			BaseArrayLayer: 0,
 			LayerCount:     1,
 		},
@@ -1911,9 +2067,9 @@ func (a *VulkanTutorialApp) createTextureSampler() error {
 		CompareEnable:           vk.False,
 		CompareOp:               vk.CompareOpAlways,
 		MipmapMode:              vk.SamplerMipmapModeLinear,
-		MipLodBias:              0,
 		MinLod:                  0,
-		MaxLod:                  0,
+		MaxLod:                  float32(a.mipLevels),
+		MipLodBias:              0,
 	}
 
 	var sampler vk.Sampler

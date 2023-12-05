@@ -11,7 +11,7 @@ import (
 	"time"
 	"unsafe"
 
-	"vulkan-tutorial/queues"
+	"vulkan-tutorial/optional"
 	"vulkan-tutorial/shaders"
 	"vulkan-tutorial/unsafer"
 
@@ -1717,8 +1717,10 @@ func (a *VulkanComputeApp) createInsance() error {
 
 // findQueueFamilies returns a FamilyIndeces populated with Vulkan queue families needed
 // by the program.
-func (a *VulkanComputeApp) findQueueFamilies(device vk.PhysicalDevice) queues.FamilyIndices {
-	indices := queues.FamilyIndices{}
+func (a *VulkanComputeApp) findQueueFamilies(
+	device vk.PhysicalDevice,
+) QueueFamilyIndices {
+	indices := QueueFamilyIndices{}
 
 	var queueFamilyCount uint32
 	vk.GetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nil)
@@ -2210,4 +2212,20 @@ func clamp[T cmp.Ordered](val, min, max T) T {
 		val = max
 	}
 	return val
+}
+
+// QueueFamilyIndices holds the indexes of Vulkan queue families needed by the programs.
+type QueueFamilyIndices struct {
+
+	// GraphicsAndCompute is the index of the graphics queue family.
+	GraphicsAndCompute optional.Optional[uint32]
+
+	// Present is the index of the queue family used for presenting to the drawing
+	// surface.
+	Present optional.Optional[uint32]
+}
+
+// IsComplete returns true if all families have been set.
+func (f *QueueFamilyIndices) IsComplete() bool {
+	return f.GraphicsAndCompute.HasValue() && f.Present.HasValue()
 }

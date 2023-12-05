@@ -7,7 +7,6 @@ import (
 	"log"
 	"math"
 	"math/rand"
-	"reflect"
 	"runtime"
 	"time"
 	"unsafe"
@@ -1996,7 +1995,7 @@ func (a *VulkanComputeApp) createShaderModule(code []byte) (vk.ShaderModule, err
 	createInfo := vk.ShaderModuleCreateInfo{
 		SType:    vk.StructureTypeShaderModuleCreateInfo,
 		CodeSize: uint(len(code)),
-		PCode:    repackUint32(code),
+		PCode:    unsafer.SliceBytesToUint32(code),
 	}
 
 	var shaderModule vk.ShaderModule
@@ -2216,10 +2215,4 @@ func clamp[T cmp.Ordered](val, min, max T) T {
 		val = max
 	}
 	return val
-}
-
-func repackUint32(data []byte) []uint32 {
-	buf := make([]uint32, len(data)/4)
-	vk.Memcopy(unsafe.Pointer((*reflect.SliceHeader)(unsafe.Pointer(&buf)).Data), data)
-	return buf
 }

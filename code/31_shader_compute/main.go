@@ -11,9 +11,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/ironsmile/vulkan-tutorial-go/optional"
-	"github.com/ironsmile/vulkan-tutorial-go/shaders"
-	"github.com/ironsmile/vulkan-tutorial-go/unsafer"
+	"github.com/ironsmile/vulkan-tutorial-go/code/31_shader_compute/shaders"
+	"github.com/ironsmile/vulkan-tutorial-go/code/optional"
+	"github.com/ironsmile/vulkan-tutorial-go/code/unsafer"
 
 	"github.com/go-gl/glfw/v3.3/glfw"
 	vk "github.com/vulkan-go/vulkan"

@@ -11,11 +11,6 @@ import (
 	"time"
 	"unsafe"
 
-	// Used for decoding textures
-
-	_ "image/jpeg"
-	_ "image/png"
-
 	"vulkan-tutorial/queues"
 	"vulkan-tutorial/shaders"
 	"vulkan-tutorial/unsafer"

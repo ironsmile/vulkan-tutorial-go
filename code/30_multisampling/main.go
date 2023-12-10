@@ -200,10 +200,6 @@ func (a *VulkanTutorialApp) Run() error {
 		return fmt.Errorf("mainLoop: %w", err)
 	}
 
-	if err := a.cleanup(); err != nil {
-		return fmt.Errorf("cleanup: %w", err)
-	}
-
 	return nil
 }
 
@@ -2792,10 +2788,6 @@ func (a *VulkanTutorialApp) updateUniformBuffer(currentImage uint32) {
 	ubo.proj[1][1] *= -1
 
 	vk.Memcopy(a.uniformBuffersMapped[currentImage], unsafer.StructToBytes(&ubo))
-}
-
-func (a *VulkanTutorialApp) cleanup() error {
-	return nil
 }
 
 type Vertex struct {

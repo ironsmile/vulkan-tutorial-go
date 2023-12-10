@@ -124,10 +124,6 @@ func (a *VulkanTutorialApp) Run() error {
 		return fmt.Errorf("mainLoop: %w", err)
 	}
 
-	if err := a.cleanup(); err != nil {
-		return fmt.Errorf("cleanup: %w", err)
-	}
-
 	return nil
 }
 
@@ -1253,10 +1249,6 @@ func (a *VulkanTutorialApp) drawFrame() error {
 	vk.QueuePresent(a.presentQueue, &presentInfo)
 
 	a.curentFrame = (a.curentFrame + 1) % maxFramesInFlight
-	return nil
-}
-
-func (a *VulkanTutorialApp) cleanup() error {
 	return nil
 }
 

@@ -231,7 +231,7 @@ func (a *VulkanTutorialApp) initVulkan() error {
 		return fmt.Errorf("failed to init Vulkan Go: %w", err)
 	}
 
-	if err := a.createInsance(); err != nil {
+	if err := a.createInstance(); err != nil {
 		return fmt.Errorf("createInstance: %w", err)
 	}
 
@@ -1729,7 +1729,7 @@ func (a *VulkanTutorialApp) createSyncObjects() error {
 	return nil
 }
 
-func (a *VulkanTutorialApp) createInsance() error {
+func (a *VulkanTutorialApp) createInstance() error {
 	if a.enableValidationLayers && !a.checkValidationSupport() {
 		return fmt.Errorf("validation layers requested but not available")
 	}
@@ -1757,8 +1757,8 @@ func (a *VulkanTutorialApp) createInsance() error {
 	}
 
 	var instance vk.Instance
-	if err := vk.Error(vk.CreateInstance(&createInfo, nil, &instance)); err != nil {
-		return fmt.Errorf("failed to create Vulkan instance: %w", err)
+	if res := vk.CreateInstance(&createInfo, nil, &instance); res != vk.Success {
+		return fmt.Errorf("failed to create Vulkan instance: %w", vk.Error(res))
 	}
 
 	a.instance = instance

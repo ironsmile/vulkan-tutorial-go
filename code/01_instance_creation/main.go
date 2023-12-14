@@ -87,7 +87,7 @@ func (a *VulkanTutorialApp) initVulkan() error {
 		return fmt.Errorf("failed to init Vulkan Go: %w", err)
 	}
 
-	if err := a.createInsance(); err != nil {
+	if err := a.createInstance(); err != nil {
 		return fmt.Errorf("createInstance: %w", err)
 	}
 
@@ -98,7 +98,7 @@ func (a *VulkanTutorialApp) cleanupVulkan() {
 	vk.DestroyInstance(a.instance, nil)
 }
 
-func (a *VulkanTutorialApp) createInsance() error {
+func (a *VulkanTutorialApp) createInstance() error {
 	appInfo := vk.ApplicationInfo{
 		SType:              vk.StructureTypeApplicationInfo,
 		PApplicationName:   title + "\x00",

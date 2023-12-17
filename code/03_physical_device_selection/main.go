@@ -7,6 +7,7 @@ import (
 	"runtime"
 
 	"github.com/go-gl/glfw/v3.3/glfw"
+	"github.com/ironsmile/vulkan-tutorial-go/code/optional"
 	vk "github.com/vulkan-go/vulkan"
 )
 
@@ -24,7 +25,7 @@ var args struct {
 }
 
 const (
-	title = "Vulkan Tutorial: Validation layers"
+	title = "Vulkan Tutorial: Physical devices and queue families"
 )
 
 func main() {
@@ -37,6 +38,7 @@ func main() {
 		validationLayers: []string{
 			"VK_LAYER_KHRONOS_validation\x00",
 		},
+		physicalDevice: vk.PhysicalDevice(vk.NullHandle),
 	}
 	if err := app.Run(); err != nil {
 		log.Fatalf("ERROR: %s", err)
@@ -55,6 +57,9 @@ type VulkanTutorialApp struct {
 
 	window   *glfw.Window
 	instance vk.Instance
+
+	// physicalDevice is the physical device selected for this program.
+	physicalDevice vk.PhysicalDevice
 }
 
 // Run runs the vulkan program.
@@ -109,11 +114,53 @@ func (a *VulkanTutorialApp) initVulkan() error {
 		return fmt.Errorf("createInstance: %w", err)
 	}
 
+	if err := a.pickPhysicalDevice(); err != nil {
+		return fmt.Errorf("pickPhysicalDevice: %w", err)
+	}
+
 	return nil
 }
 
 func (a *VulkanTutorialApp) cleanupVulkan() {
 	vk.DestroyInstance(a.instance, nil)
+}
+
+func (a *VulkanTutorialApp) pickPhysicalDevice() error {
+	var deviceCount uint32
+	err := vk.Error(vk.EnumeratePhysicalDevices(a.instance, &deviceCount, nil))
+	if err != nil {
+		return fmt.Errorf("failed to get the number of physical devices: %w", err)
+	}
+	if deviceCount == 0 {
+		return fmt.Errorf("failed to find GPUs with Vulkan support")
+	}
+
+	pDevices := make([]vk.PhysicalDevice, deviceCount)
+	err = vk.Error(vk.EnumeratePhysicalDevices(a.instance, &deviceCount, pDevices))
+	if err != nil {
+		return fmt.Errorf("failed to enumerate the physical devices: %w", err)
+	}
+
+	var (
+		selectedDevice vk.PhysicalDevice
+		score          uint32
+	)
+
+	for _, device := range pDevices {
+		deviceScore := a.getDeviceScore(device)
+
+		if deviceScore > score {
+			selectedDevice = device
+			score = deviceScore
+		}
+	}
+
+	if selectedDevice == vk.PhysicalDevice(vk.NullHandle) {
+		return fmt.Errorf("failed to find suitable physical devices")
+	}
+
+	a.physicalDevice = selectedDevice
+	return nil
 }
 
 func (a *VulkanTutorialApp) createInstance() error {
@@ -150,6 +197,72 @@ func (a *VulkanTutorialApp) createInstance() error {
 
 	a.instance = instance
 	return nil
+}
+
+// findQueueFamilies returns a FamilyIndeces populated with Vulkan queue families needed
+// by the program.
+func (a *VulkanTutorialApp) findQueueFamilies(
+	device vk.PhysicalDevice,
+) QueueFamilyIndices {
+	indices := QueueFamilyIndices{}
+
+	var queueFamilyCount uint32
+	vk.GetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nil)
+
+	queueFamilies := make([]vk.QueueFamilyProperties, queueFamilyCount)
+	vk.GetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies)
+
+	for i, family := range queueFamilies {
+		family.Deref()
+
+		if family.QueueFlags&vk.QueueFlags(vk.QueueGraphicsBit) != 0 {
+			indices.Graphics.Set(uint32(i))
+		}
+
+		if indices.IsComplete() {
+			break
+		}
+	}
+
+	return indices
+}
+
+// getDeviceScore returns how suitable is this device for the current program.
+// Bigger score means better. Zero or negative means the device cannot be used.
+func (a *VulkanTutorialApp) getDeviceScore(device vk.PhysicalDevice) uint32 {
+	var (
+		deviceScore uint32
+		properties  vk.PhysicalDeviceProperties
+	)
+
+	vk.GetPhysicalDeviceProperties(device, &properties)
+	properties.Deref()
+
+	if properties.DeviceType == vk.PhysicalDeviceTypeDiscreteGpu {
+		deviceScore += 1000
+	} else {
+		deviceScore++
+	}
+
+	if !a.isDeviceSuitable(device) {
+		deviceScore = 0
+	}
+
+	if args.debug {
+		log.Printf(
+			"Available device: %s (score: %d)",
+			vk.ToString(properties.DeviceName[:]),
+			deviceScore,
+		)
+	}
+
+	return deviceScore
+}
+
+func (a *VulkanTutorialApp) isDeviceSuitable(device vk.PhysicalDevice) bool {
+	indices := a.findQueueFamilies(device)
+
+	return indices.IsComplete()
 }
 
 func (a *VulkanTutorialApp) checkValidationSupport() bool {
@@ -197,4 +310,16 @@ func (a *VulkanTutorialApp) mainLoop() error {
 	}
 
 	return nil
+}
+
+// QueueFamilyIndices holds the indexes of Vulkan queue families needed by the programs.
+type QueueFamilyIndices struct {
+
+	// Graphics is the index of the graphics queue family.
+	Graphics optional.Optional[uint32]
+}
+
+// IsComplete returns true if all families have been set.
+func (f *QueueFamilyIndices) IsComplete() bool {
+	return f.Graphics.HasValue()
 }

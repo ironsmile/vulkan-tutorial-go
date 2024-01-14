@@ -1901,7 +1901,7 @@ func (a *VulkanTutorialApp) createTextureImage() error {
 	)) + 1
 
 	var (
-		staginbBuffer       vk.Buffer
+		stagingBuffer       vk.Buffer
 		stagingBufferMemory vk.DeviceMemory
 	)
 
@@ -1910,7 +1910,7 @@ func (a *VulkanTutorialApp) createTextureImage() error {
 		vk.BufferUsageFlags(vk.BufferUsageTransferSrcBit),
 		vk.MemoryPropertyFlags(vk.MemoryPropertyHostVisibleBit)|
 			vk.MemoryPropertyFlags(vk.MemoryPropertyHostCoherentBit),
-		&staginbBuffer,
+		&stagingBuffer,
 		&stagingBufferMemory,
 	)
 	if err != nil {
@@ -1918,7 +1918,7 @@ func (a *VulkanTutorialApp) createTextureImage() error {
 	}
 
 	defer func() {
-		vk.DestroyBuffer(a.device, staginbBuffer, nil)
+		vk.DestroyBuffer(a.device, stagingBuffer, nil)
 		vk.FreeMemory(a.device, stagingBufferMemory, nil)
 	}()
 
@@ -1970,7 +1970,7 @@ func (a *VulkanTutorialApp) createTextureImage() error {
 		return fmt.Errorf("transition image layout: %w", err)
 	}
 
-	err = a.copyBufferToImage(staginbBuffer, a.textureImage, texWidth, texHeight)
+	err = a.copyBufferToImage(stagingBuffer, a.textureImage, texWidth, texHeight)
 	if err != nil {
 		return fmt.Errorf("copying buffer to image: %w", err)
 	}

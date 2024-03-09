@@ -361,4 +361,4 @@ Great, that's all we need for now to find the right physical device! The next
 step is to [create a logical device](!en/Drawing_a_triangle/Setup/Logical_device_and_queues)
 to interface with it.
 
-[C++ code](/code/03_physical_device_selection.cpp)
+[Go code](/code/03_physical_device_selection/main.go)

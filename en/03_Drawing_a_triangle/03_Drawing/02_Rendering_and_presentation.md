@@ -572,6 +572,6 @@ from this point on.
 
 The next chapter will expand the render loop to handle multiple frames in flight.
 
-[C++ code](/code/15_hello_triangle.cpp) /
-[Vertex shader](/code/09_shader_base.vert) /
-[Fragment shader](/code/09_shader_base.frag)
+[Go code](/code/15_hello_triangle/main.go) /
+[Vertex shader](/code/09_shader_modules/shaders/triangle.vert) /
+[Fragment shader](/code/09_shader_modules/shaders/triangle.frag)

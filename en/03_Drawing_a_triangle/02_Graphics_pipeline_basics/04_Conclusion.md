@@ -117,6 +117,6 @@ successful pipeline creation! We are already getting quite close to seeing
 something pop up on the screen. In the next couple of chapters we'll set up the
 actual framebuffers from the swap chain images and prepare the drawing commands.
 
-[C++ code](/code/12_graphics_pipeline_complete.cpp) /
-[Vertex shader](/code/09_shader_base.vert) /
-[Fragment shader](/code/09_shader_base.frag)
+[Go code](/code/12_graphics_pipeline_complete/main.go) /
+[Vertex shader](/code/09_shader_modules/shaders/triangle.vert) /
+[Fragment shader](/code/09_shader_modules/shaders/triangle.frag)

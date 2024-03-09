@@ -434,6 +434,6 @@ is not what you expect.
 There is however one more object to create before we can finally create the
 graphics pipeline and that is a [render pass](!en/Drawing_a_triangle/Graphics_pipeline_basics/Render_passes).
 
-[C++ code](/code/10_fixed_functions.cpp) /
-[Vertex shader](/code/09_shader_base.vert) /
-[Fragment shader](/code/09_shader_base.frag)
+[Go code](/code/10_fixed_functions/main.go) /
+[Vertex shader](/code/09_shader_modules/shaders/triangle.vert) /
+[Fragment shader](/code/09_shader_modules/shaders/triangle.frag)

@@ -31,8 +31,11 @@
         }
     },
     "ignore": {
-        "files": ["README.md", "build_ebook.py","daux.patch",".gitignore","build-static.sh","go.sum","go.mod"],
-        "folders": ["resources","models","ebook",".git"]
+        "files": [
+            "README.md", "build_ebook.py","daux.patch",".gitignore","build-static.sh",
+            "go.sum","go.mod","convert-articles.sh"
+        ],
+        "folders": ["models","ebook",".git"]
     },
     "languages": {"en": "English"},
     "language": "en",

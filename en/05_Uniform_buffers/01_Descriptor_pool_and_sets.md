@@ -324,7 +324,7 @@ Luckily there is a way to not have to think about these alignment requirements *
 
 This will force GLM to use a version of `vec2` and `mat4` that has the alignment requirements already specified for us. If you add this definition then you can remove the `alignas` specifier and your program should still work.
 
-Unfortunately this method can break down if you start using nested structures. Consider the following definition in the C++ code:
+Unfortunately this method can break down if you start using nested structures. Consider the following definition in the Go code:
 
 ```c++
 struct Foo {
@@ -386,6 +386,6 @@ You can use this feature to put descriptors that vary per-object and descriptors
 that are shared into separate descriptor sets. In that case you avoid rebinding
 most of the descriptors across draw calls which is potentially more efficient.
 
-[C++ code](/code/23_descriptor_sets.cpp) /
-[Vertex shader](/code/22_shader_ubo.vert) /
-[Fragment shader](/code/22_shader_ubo.frag)
+[Go code](/code/23_descriptor_sets/main.go) /
+[Vertex shader](/code/22_descriptor_set_layout/shaders/shader.vert) /
+[Fragment shader](/code/22_descriptor_set_layout/shaders/shader.frag)

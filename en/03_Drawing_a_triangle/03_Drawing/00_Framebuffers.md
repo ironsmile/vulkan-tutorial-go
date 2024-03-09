@@ -102,6 +102,6 @@ We've now reached the milestone where we have all of the objects that are
 required for rendering. In the next chapter we're going to write the first
 actual drawing commands.
 
-[C++ code](/code/13_framebuffers.cpp) /
-[Vertex shader](/code/09_shader_base.vert) /
-[Fragment shader](/code/09_shader_base.frag)
+[Go code](/code/13_framebuffers/main.go) /
+[Vertex shader](/code/09_shader_modules/shaders/triangle.vert) /
+[Fragment shader](/code/09_shader_modules/shaders/triangle.frag)

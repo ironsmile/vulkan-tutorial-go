@@ -327,6 +327,6 @@ check the size of `vertices`, then you'll see that it has shrunk down from
 1,500,000 to 265,645! That means that each vertex is reused in an average number
 of ~6 triangles. This definitely saves us a lot of GPU memory.
 
-[C++ code](/code/28_model_loading.cpp) /
-[Vertex shader](/code/27_shader_depth.vert) /
-[Fragment shader](/code/27_shader_depth.frag)
+[Go code](/code/28_model_loading/main.go) /
+[Vertex shader](/code/27_shader_depth/shaders/shader.vert) /
+[Fragment shader](/code/27_shader_depth/shaders/shader.frag)

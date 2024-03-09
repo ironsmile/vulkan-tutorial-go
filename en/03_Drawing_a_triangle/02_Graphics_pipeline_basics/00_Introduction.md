@@ -96,4 +96,4 @@ void createGraphicsPipeline() {
 }
 ```
 
-[C++ code](/code/08_graphics_pipeline.cpp)
+[Go code](/code/08_graphics_pipeline/main.go)

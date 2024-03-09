@@ -447,7 +447,7 @@ void main()
 }
 ```
 
-The top part of the shader contains the declarations for the shader's input. First is a uniform buffer object at binding 0, something we already learned about in this tutorial. Below we declare our Particle structure that matches the declaration in the C++ code. Binding 1 then refers to the shader storage buffer object with the particle data from the last frame (see the descriptor setup), and binding 2 points to the SSBO for the current frame, which is the one we'll be updating with this shader.
+The top part of the shader contains the declarations for the shader's input. First is a uniform buffer object at binding 0, something we already learned about in this tutorial. Below we declare our Particle structure that matches the declaration in the Go code. Binding 1 then refers to the shader storage buffer object with the particle data from the last frame (see the descriptor setup), and binding 2 points to the SSBO for the current frame, which is the one we'll be updating with this shader.
 
 An interesting thing is this compute-only declaration related to the compute space:
 
@@ -644,7 +644,7 @@ In this chapter, we learned how to use compute shaders to offload work from the 
 
 You can find some advanced compute samples in the [official Khronos Vulkan Samples repository](https://github.com/KhronosGroup/Vulkan-Samples/tree/master/samples/api).
 
-[C++ code](/code/31_compute_shader.cpp) /
-[Vertex shader](/code/31_shader_compute.vert) /
-[Fragment shader](/code/31_shader_compute.frag) /
-[Compute shader](/code/31_shader_compute.comp)
+[Go code](/code/31_shader_compute/main.go) /
+[Vertex shader](/code/31_shader_compute/shaders/shader.vert) /
+[Fragment shader](/code/31_shader_compute/shaders/shader.frag) /
+[Compute shader](/code/31_shader_compute/shaders/shader.comp)

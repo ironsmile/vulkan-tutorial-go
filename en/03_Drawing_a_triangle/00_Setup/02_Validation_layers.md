@@ -455,4 +455,4 @@ you how helpful the validation layers are with catching them and to teach you
 how important it is to know exactly what you're doing with Vulkan. Now it's time
 to look at [Vulkan devices in the system](!en/Drawing_a_triangle/Setup/Physical_devices_and_queue_families).
 
-[C++ code](/code/02_validation_layers.cpp)
+[Go code](/code/02_validation_layers/main.go)
